@@ -1,0 +1,92 @@
+import { useEffect, useRef, useCallback } from 'react';
+import { useAgentStore, AgentEvent, AgentState, FileSystemNode } from '../stores/agentStore';
+
+interface ServerMessage {
+  type: 'event' | 'agents' | 'filesystem' | 'error';
+  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string };
+}
+
+const WS_URL = `ws://${window.location.hostname}:3001/ws`;
+const RECONNECT_DELAY = 3000;
+
+export function useAgentEvents() {
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+
+  const { setAgents, setFileSystem, addEvent, setConnected, currentPath } = useAgentStore();
+
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('🔷 Connected to The Grid');
+      setConnected(true);
+
+      ws.send(JSON.stringify({ type: 'getFilesystem', path: currentPath }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data) as ServerMessage;
+
+        switch (message.type) {
+          case 'event':
+            addEvent(message.payload as AgentEvent);
+            break;
+          case 'agents':
+            setAgents(message.payload as AgentState[]);
+            break;
+          case 'filesystem':
+            setFileSystem(message.payload as FileSystemNode);
+            break;
+          case 'error':
+            console.error('Server error:', (message.payload as { message: string }).message);
+            break;
+        }
+      } catch (err) {
+        console.error('Failed to parse message:', err);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('🔷 Disconnected from The Grid');
+      setConnected(false);
+      wsRef.current = null;
+
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        console.log('🔷 Attempting to reconnect...');
+        connect();
+      }, RECONNECT_DELAY);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+  }, [setAgents, setFileSystem, addEvent, setConnected, currentPath]);
+
+  const requestFilesystem = useCallback((path: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'getFilesystem', path }));
+    }
+  }, []);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      wsRef.current?.close();
+    };
+  }, [connect]);
+
+  useEffect(() => {
+    requestFilesystem(currentPath);
+  }, [currentPath, requestFilesystem]);
+
+  return { requestFilesystem };
+}
