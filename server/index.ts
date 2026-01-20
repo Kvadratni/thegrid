@@ -85,7 +85,10 @@ async function scanDirectory(dirPath: string, depth = 2): Promise<FileSystemNode
 app.post('/api/events', (req, res) => {
   const event = req.body as AgentEvent;
 
+  console.log('📡 Received event:', JSON.stringify(event, null, 2));
+
   if (!event.sessionId || !event.hookEvent) {
+    console.log('❌ Invalid event - missing sessionId or hookEvent');
     res.status(400).json({ error: 'Invalid event payload' });
     return;
   }
@@ -102,9 +105,14 @@ app.post('/api/events', (req, res) => {
       currentPath: event.filePath,
       lastActivity: event.timestamp,
       color: AGENT_COLORS[event.agentType],
+      status: 'running',
     });
   } else if (event.hookEvent === 'SessionEnd' || event.hookEvent === 'SubagentStop') {
-    agents.delete(agentKey);
+    const agent = agents.get(agentKey);
+    if (agent) {
+      agent.status = 'completed';
+      agent.lastActivity = event.timestamp;
+    }
   } else {
     const agent = agents.get(agentKey);
     if (agent) {
@@ -117,6 +125,7 @@ app.post('/api/events', (req, res) => {
         currentPath: event.filePath,
         lastActivity: event.timestamp,
         color: AGENT_COLORS[event.agentType],
+        status: 'running',
       });
     }
   }
@@ -158,10 +167,17 @@ app.post('/api/agents/spawn', (req, res) => {
   const sessionId = `grid-${randomUUID().slice(0, 8)}`;
 
   try {
-    const claudeProcess = spawn('claude', ['-p', prompt, '--output-format', 'stream-json'], {
+    const args = [
+      '-p', prompt,
+      '--output-format', 'stream-json',
+      '--verbose',
+    ];
+    console.log(`[${sessionId}] Spawning: claude ${args.join(' ')}`);
+
+    const claudeProcess = spawn('claude', args, {
       cwd: workingDirectory,
       env: { ...process.env, CLAUDE_SESSION_ID: sessionId },
-      shell: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     spawnedProcesses.set(sessionId, claudeProcess);
@@ -172,33 +188,72 @@ app.post('/api/agents/spawn', (req, res) => {
       currentPath: workingDirectory,
       lastActivity: new Date().toISOString(),
       color: AGENT_COLORS.main,
+      status: 'running',
     });
 
     broadcast({ type: 'agents', payload: Array.from(agents.values()) });
 
     claudeProcess.stdout?.on('data', (data) => {
-      const lines = data.toString().split('\n').filter(Boolean);
+      const output = data.toString();
+      console.log(`[${sessionId}] stdout:`, output.slice(0, 500));
+
+      const lines = output.split('\n').filter(Boolean);
       for (const line of lines) {
         try {
           const parsed = JSON.parse(line);
-          if (parsed.type === 'tool_use' && parsed.tool) {
-            const filePath = parsed.tool.input?.file_path || parsed.tool.input?.path || workingDirectory;
+          console.log(`[${sessionId}] Parsed JSON type:`, parsed.type);
+
+          // Handle assistant messages
+          if (parsed.type === 'assistant' && parsed.message?.content) {
+            for (const block of parsed.message.content) {
+              if (block.type === 'tool_use') {
+                const filePath = block.input?.file_path || block.input?.path || workingDirectory;
+                const event: AgentEvent = {
+                  timestamp: new Date().toISOString(),
+                  sessionId,
+                  hookEvent: 'PostToolUse',
+                  toolName: block.name || 'Unknown',
+                  filePath,
+                  agentType: 'main',
+                };
+                console.log(`[${sessionId}] Broadcasting tool event:`, event.toolName);
+                broadcast({ type: 'event', payload: event });
+
+                const agent = agents.get(`${sessionId}-main`);
+                if (agent) {
+                  agent.currentPath = filePath;
+                  agent.lastActivity = event.timestamp;
+                }
+                broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+              } else if (block.type === 'text' && block.text) {
+                const event: AgentEvent = {
+                  timestamp: new Date().toISOString(),
+                  sessionId,
+                  hookEvent: 'AssistantMessage',
+                  agentType: 'main',
+                  message: block.text,
+                };
+                broadcast({ type: 'event', payload: event });
+              }
+            }
+          }
+
+          // Handle final result
+          if (parsed.type === 'result') {
             const event: AgentEvent = {
               timestamp: new Date().toISOString(),
               sessionId,
-              hookEvent: 'PostToolUse',
-              toolName: parsed.tool.name || 'Unknown',
-              filePath,
+              hookEvent: 'Result',
               agentType: 'main',
+              message: parsed.result,
+              details: {
+                success: !parsed.is_error,
+                duration_ms: parsed.duration_ms,
+                num_turns: parsed.num_turns,
+                cost_usd: parsed.total_cost_usd,
+              },
             };
             broadcast({ type: 'event', payload: event });
-
-            const agent = agents.get(`${sessionId}-main`);
-            if (agent) {
-              agent.currentPath = filePath;
-              agent.lastActivity = event.timestamp;
-            }
-            broadcast({ type: 'agents', payload: Array.from(agents.values()) });
           }
         } catch {
           // Not JSON, ignore
@@ -206,18 +261,34 @@ app.post('/api/agents/spawn', (req, res) => {
       }
     });
 
-    claudeProcess.on('close', () => {
+    claudeProcess.stderr?.on('data', (data) => {
+      console.log(`[${sessionId}] stderr:`, data.toString().slice(0, 500));
+    });
+
+    claudeProcess.on('close', (code, signal) => {
       spawnedProcesses.delete(sessionId);
-      agents.delete(`${sessionId}-main`);
+      const agent = agents.get(`${sessionId}-main`);
+      if (agent) {
+        agent.status = code === 0 ? 'completed' : 'error';
+        agent.lastActivity = new Date().toISOString();
+      }
       broadcast({ type: 'agents', payload: Array.from(agents.values()) });
-      console.log(`Agent ${sessionId} finished`);
+      console.log(`[${sessionId}] Agent finished with code ${code}, signal ${signal}`);
     });
 
     claudeProcess.on('error', (err) => {
-      console.error(`Agent ${sessionId} error:`, err);
+      console.error(`[${sessionId}] Spawn error:`, err);
       spawnedProcesses.delete(sessionId);
-      agents.delete(`${sessionId}-main`);
+      const agent = agents.get(`${sessionId}-main`);
+      if (agent) {
+        agent.status = 'error';
+        agent.lastActivity = new Date().toISOString();
+      }
       broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+    });
+
+    claudeProcess.on('spawn', () => {
+      console.log(`[${sessionId}] Process spawned successfully, pid: ${claudeProcess.pid}`);
     });
 
     res.json({ success: true, sessionId });
@@ -239,7 +310,17 @@ app.delete('/api/agents/:sessionId', (req, res) => {
     broadcast({ type: 'agents', payload: Array.from(agents.values()) });
     res.json({ success: true });
   } else {
-    res.status(404).json({ error: 'Agent not found' });
+    // For external agents, just remove from the agents map
+    const agentKey = `${sessionId}-main`;
+    const subagentKey = `${sessionId}-subagent`;
+    if (agents.has(agentKey) || agents.has(subagentKey)) {
+      agents.delete(agentKey);
+      agents.delete(subagentKey);
+      broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'Agent not found' });
+    }
   }
 });
 

@@ -1,21 +1,30 @@
 #!/bin/bash
 
 GRID_SERVER="${GRID_SERVER:-http://localhost:3001}"
+DEBUG_LOG="/tmp/thegrid-hooks.log"
+
+# Read all stdin first
+input_line=$(cat)
+
+echo "[$(date)] === HOOK CALLED ===" >> "$DEBUG_LOG"
+echo "CLAUDE_* env vars:" >> "$DEBUG_LOG"
+env | grep -i claude >> "$DEBUG_LOG" 2>/dev/null || echo "  (none)" >> "$DEBUG_LOG"
+echo "STDIN: $input_line" >> "$DEBUG_LOG"
+echo "---" >> "$DEBUG_LOG"
 
 send_event() {
-    local hook_event="$1"
-    local tool_name="$2"
-    local file_path="$3"
-    local agent_type="${4:-main}"
+    local tool_name="$1"
+    local file_path="$2"
+    local hook_event="$3"
 
     local payload=$(cat <<EOF
 {
     "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-    "sessionId": "${CLAUDE_SESSION_ID:-unknown}",
+    "sessionId": "${CLAUDE_PROJECT_DIR:-unknown}",
     "hookEvent": "$hook_event",
     "toolName": "$tool_name",
     "filePath": "$file_path",
-    "agentType": "$agent_type",
+    "agentType": "main",
     "details": {}
 }
 EOF
@@ -26,34 +35,28 @@ EOF
         -d "$payload" > /dev/null 2>&1 &
 }
 
-extract_file_path() {
-    local input="$1"
-    echo "$input" | grep -oE '"file_path"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//' || \
-    echo "$input" | grep -oE '"path"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//' || \
-    echo ""
-}
+# Try to extract tool name and file path from the JSON input
+tool_name=$(echo "$input_line" | grep -oE '"tool_name"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//')
+if [ -z "$tool_name" ]; then
+    tool_name=$(echo "$input_line" | grep -oE '"name"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//')
+fi
 
-read -r input_line
+file_path=$(echo "$input_line" | grep -oE '"file_path"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//')
+if [ -z "$file_path" ]; then
+    file_path=$(echo "$input_line" | grep -oE '"path"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//')
+fi
 
-hook_event="${CLAUDE_HOOK_EVENT:-PreToolUse}"
-tool_name="${CLAUDE_TOOL_NAME:-Unknown}"
-file_path=$(extract_file_path "$input_line")
+hook_event=$(echo "$input_line" | grep -oE '"hook_event"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//')
+if [ -z "$hook_event" ]; then
+    hook_event="ToolUse"
+fi
 
-case "$tool_name" in
-    Read|Write|Edit|Glob|Grep)
-        send_event "$hook_event" "$tool_name" "$file_path"
-        ;;
-    Bash)
-        working_dir="${CLAUDE_WORKING_DIRECTORY:-$(pwd)}"
-        send_event "$hook_event" "$tool_name" "$working_dir"
-        ;;
-    Task)
-        send_event "$hook_event" "$tool_name" "$file_path" "subagent"
-        ;;
-    *)
-        send_event "$hook_event" "$tool_name" ""
-        ;;
-esac
+echo "[$(date)] Extracted: tool=$tool_name file=$file_path event=$hook_event" >> "$DEBUG_LOG"
 
+if [ -n "$tool_name" ]; then
+    send_event "$tool_name" "$file_path" "$hook_event"
+fi
+
+# Pass through the input unchanged
 echo "$input_line"
 exit 0

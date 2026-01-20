@@ -1,12 +1,45 @@
-import { useMemo } from 'react';
+import { useMemo, useState, createContext, useContext, useRef } from 'react';
 import { Text, Billboard } from '@react-three/drei';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useAgentStore, FileSystemNode } from '../stores/agentStore';
-import { calculateLayout, LayoutNode } from '../utils/fileSystemLayout';
+import { calculateLayout, LayoutNode, getPositionForPath } from '../utils/fileSystemLayout';
+import FileEffect from './effects/FileEffect';
 
 interface FileSystemProps {
   node: FileSystemNode;
   position: [number, number, number];
+}
+
+// Render distance configuration
+const RENDER_DISTANCE = 60;
+const RENDER_DISTANCE_SQ = RENDER_DISTANCE * RENDER_DISTANCE;
+
+// Camera position context for efficient culling
+const CameraPositionContext = createContext<THREE.Vector3>(new THREE.Vector3());
+
+function CameraPositionProvider({ children }: { children: React.ReactNode }) {
+  const { camera } = useThree();
+  const [camPos, setCamPos] = useState(() => new THREE.Vector3());
+  const frameCount = useRef(0);
+
+  useFrame(() => {
+    // Update every 5 frames to reduce overhead
+    frameCount.current++;
+    if (frameCount.current % 5 === 0) {
+      setCamPos(camera.position.clone());
+    }
+  });
+
+  return (
+    <CameraPositionContext.Provider value={camPos}>
+      {children}
+    </CameraPositionContext.Provider>
+  );
+}
+
+function useCameraPosition() {
+  return useContext(CameraPositionContext);
 }
 
 const FILE_COLORS: Record<string, string> = {
@@ -30,8 +63,13 @@ function getFileColor(extension?: string): string {
   return FILE_COLORS[extension.toLowerCase()] || FILE_COLORS.default;
 }
 
-function Building({ layout }: { layout: LayoutNode }) {
+function Building({ layout, parentX = 0, parentZ = 0 }: { layout: LayoutNode; parentX?: number; parentZ?: number }) {
   const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
+  const camPos = useCameraPosition();
+
+  const worldX = parentX + layout.x;
+  const worldZ = parentZ + layout.z;
+
   const isDirectory = layout.node.type === 'directory';
   const color = isDirectory ? '#00FFFF' : getFileColor(layout.node.extension);
   const height = isDirectory ? 0.3 : Math.max(1, Math.min(6, (layout.node.size || 1000) / 3000));
@@ -45,12 +83,6 @@ function Building({ layout }: { layout: LayoutNode }) {
     });
   }, []);
 
-  const handleClick = () => {
-    if (isDirectory) {
-      setCurrentPath(layout.node.path);
-    }
-  };
-
   const geometry = useMemo(() => {
     if (isDirectory) {
       return new THREE.CylinderGeometry(1.2, 1.2, 0.3, 6);
@@ -61,6 +93,29 @@ function Building({ layout }: { layout: LayoutNode }) {
   const edgesGeometry = useMemo(() => {
     return new THREE.EdgesGeometry(geometry);
   }, [geometry]);
+
+  // Distance culling - check if this building is within render distance
+  const dx = worldX - camPos.x;
+  const dz = worldZ - camPos.z;
+  const distanceSq = dx * dx + dz * dz;
+  const isCulled = distanceSq > RENDER_DISTANCE_SQ;
+
+  const handleClick = () => {
+    if (isDirectory) {
+      setCurrentPath(layout.node.path);
+    }
+  };
+
+  // If culled, only render children (they might be closer)
+  if (isCulled) {
+    return (
+      <group position={[layout.x, 0, layout.z]}>
+        {layout.children?.map((child) => (
+          <Building key={child.node.path} layout={child} parentX={worldX} parentZ={worldZ} />
+        ))}
+      </group>
+    );
+  }
 
   return (
     <group position={[layout.x, 0, layout.z]}>
@@ -109,7 +164,7 @@ function Building({ layout }: { layout: LayoutNode }) {
       </Billboard>
 
       {layout.children?.map((child) => (
-        <Building key={child.node.path} layout={child} />
+        <Building key={child.node.path} layout={child} parentX={worldX} parentZ={worldZ} />
       ))}
     </group>
   );
@@ -127,6 +182,7 @@ function RoadSegment({
   end: [number, number];
   color?: string;
 }) {
+  const camPos = useCameraPosition();
   const [x1, z1] = start;
   const [x2, z2] = end;
 
@@ -165,7 +221,14 @@ function RoadSegment({
     return [new THREE.Line(geo1, mat), new THREE.Line(geo2, mat.clone())];
   }, [x1, z1, x2, z2, isHorizontal, color]);
 
-  if (length === 0) return null;
+  // Distance culling for roads
+  const dx = centerX - camPos.x;
+  const dz = centerZ - camPos.z;
+  const distanceSq = dx * dx + dz * dz;
+
+  if (length === 0 || distanceSq > RENDER_DISTANCE_SQ) {
+    return null;
+  }
 
   return (
     <group>
@@ -300,34 +363,62 @@ function ParentPortal({ currentPath }: { currentPath: string }) {
 
 export default function FileSystem({ node, position }: FileSystemProps) {
   const currentPath = useAgentStore((state) => state.currentPath);
+  const fileEffects = useAgentStore((state) => state.fileEffects);
   const layout = useMemo(() => calculateLayout(node), [node]);
 
   const roads = useMemo(() => {
     const result: { from: [number, number]; to: [number, number] }[] = [];
 
-    function collectRoads(layoutNode: LayoutNode) {
-      if (layoutNode.children) {
-        for (const child of layoutNode.children) {
-          result.push({
-            from: [layoutNode.x, layoutNode.z],
-            to: [layoutNode.x + child.x, layoutNode.z + child.z],
-          });
-          collectRoads(child);
+    function collectRoads(layoutNode: LayoutNode, parentX: number, parentZ: number) {
+      const children = layoutNode.children || [];
+      if (children.length === 0) return;
+
+      // Connect parent to each direct child
+      children.forEach(child => {
+        const childX = parentX + child.x;
+        const childZ = parentZ + child.z;
+
+        // L-shaped road from parent to child
+        result.push({
+          from: [parentX, parentZ],
+          to: [childX, childZ],
+        });
+
+        // Recurse into directory children
+        if (child.node.type === 'directory' && child.children && child.children.length > 0) {
+          collectRoads(child, childX, childZ);
         }
-      }
+      });
     }
 
-    collectRoads(layout);
+    collectRoads(layout, 0, 0);
     return result;
   }, [layout]);
 
+  const effectPositions = useMemo(() => {
+    return fileEffects.map(effect => {
+      const pos = getPositionForPath(effect.path, node);
+      return { effect, pos };
+    }).filter(item => item.pos !== null);
+  }, [fileEffects, node]);
+
   return (
-    <group position={position}>
-      <ParentPortal currentPath={currentPath} />
-      {roads.map((road, i) => (
-        <Road key={i} from={road.from} to={road.to} />
-      ))}
-      <Building layout={layout} />
-    </group>
+    <CameraPositionProvider>
+      <group position={position}>
+        <ParentPortal currentPath={currentPath} />
+        {roads.map((road, i) => (
+          <Road key={i} from={road.from} to={road.to} />
+        ))}
+        <Building layout={layout} />
+
+        {effectPositions.map(({ effect, pos }) => (
+          <FileEffect
+            key={`${effect.path}-${effect.timestamp}`}
+            effect={effect}
+            position={[pos!.x, 0, pos!.z]}
+          />
+        ))}
+      </group>
+    </CameraPositionProvider>
   );
 }

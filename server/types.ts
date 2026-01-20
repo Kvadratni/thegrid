@@ -4,7 +4,9 @@ export type HookEventType =
   | 'SessionStart'
   | 'SessionEnd'
   | 'SubagentStart'
-  | 'SubagentStop';
+  | 'SubagentStop'
+  | 'AssistantMessage'
+  | 'Result';
 
 export type ToolName =
   | 'Read'
@@ -29,8 +31,11 @@ export interface AgentEvent {
   toolName?: ToolName;
   filePath?: string;
   agentType: AgentType;
+  message?: string;
   details?: Record<string, unknown>;
 }
+
+export type AgentStatus = 'running' | 'completed' | 'error';
 
 export interface AgentState {
   sessionId: string;
@@ -38,6 +43,7 @@ export interface AgentState {
   currentPath?: string;
   lastActivity: string;
   color: string;
+  status: AgentStatus;
 }
 
 export interface FileSystemNode {

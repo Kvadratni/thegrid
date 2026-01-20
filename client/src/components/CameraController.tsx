@@ -72,12 +72,21 @@ export default function CameraController() {
   useFrame((_, delta) => {
     const speed = keys.current.shift ? MOVE_SPEED * 2 : MOVE_SPEED;
 
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+
+    right.crossVectors(forward, camera.up).normalize();
+
     const movement = new THREE.Vector3();
 
-    if (keys.current.w) movement.z += 1;
-    if (keys.current.s) movement.z -= 1;
-    if (keys.current.a) movement.x += 1;
-    if (keys.current.d) movement.x -= 1;
+    if (keys.current.w) movement.add(forward);
+    if (keys.current.s) movement.sub(forward);
+    if (keys.current.a) movement.sub(right);
+    if (keys.current.d) movement.add(right);
 
     if (movement.length() > 0) {
       movement.normalize().multiplyScalar(speed * delta);

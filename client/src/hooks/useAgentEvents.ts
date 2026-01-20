@@ -8,12 +8,18 @@ interface ServerMessage {
 
 const WS_URL = `ws://${window.location.hostname}:3001/ws`;
 const RECONNECT_DELAY = 3000;
+const FILESYSTEM_REFRESH_DELAY = 1000;
 
 export function useAgentEvents() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const filesystemRefreshTimeoutRef = useRef<number | null>(null);
+  const currentPathRef = useRef<string>('');
 
-  const { setAgents, setFileSystem, addEvent, setConnected, currentPath } = useAgentStore();
+  const { setAgents, setFileSystem, addEvent, setConnected, currentPath, filesystemDirty } = useAgentStore();
+
+  // Keep ref in sync with state
+  currentPathRef.current = currentPath;
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -25,7 +31,7 @@ export function useAgentEvents() {
       console.log('🔷 Connected to The Grid');
       setConnected(true);
 
-      ws.send(JSON.stringify({ type: 'getFilesystem', path: currentPath }));
+      ws.send(JSON.stringify({ type: 'getFilesystem', path: currentPathRef.current }));
     };
 
     ws.onmessage = (event) => {
@@ -65,7 +71,7 @@ export function useAgentEvents() {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-  }, [setAgents, setFileSystem, addEvent, setConnected, currentPath]);
+  }, [setAgents, setFileSystem, addEvent, setConnected]);
 
   const requestFilesystem = useCallback((path: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -87,6 +93,25 @@ export function useAgentEvents() {
   useEffect(() => {
     requestFilesystem(currentPath);
   }, [currentPath, requestFilesystem]);
+
+  useEffect(() => {
+    if (filesystemDirty === 0) return;
+
+    if (filesystemRefreshTimeoutRef.current) {
+      clearTimeout(filesystemRefreshTimeoutRef.current);
+    }
+
+    filesystemRefreshTimeoutRef.current = window.setTimeout(() => {
+      console.log('🔷 Refreshing filesystem after file change');
+      requestFilesystem(currentPath);
+    }, FILESYSTEM_REFRESH_DELAY);
+
+    return () => {
+      if (filesystemRefreshTimeoutRef.current) {
+        clearTimeout(filesystemRefreshTimeoutRef.current);
+      }
+    };
+  }, [filesystemDirty, currentPath, requestFilesystem]);
 
   return { requestFilesystem };
 }

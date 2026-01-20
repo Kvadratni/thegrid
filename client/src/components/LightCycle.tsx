@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState } from 'react';
+import { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Text, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
@@ -11,6 +11,8 @@ interface LightCycleProps {
 }
 
 const AGENT_OFFSET = 2;
+const MOVE_SPEED = 8;
+const TURN_SPEED = 12;
 
 function getAgentName(sessionId: string): string {
   if (sessionId.startsWith('grid-')) {
@@ -79,14 +81,39 @@ function CycleBody({ color }: { color: string }) {
 
 export default function LightCycle({ agent }: LightCycleProps) {
   const meshRef = useRef<THREE.Group>(null);
-  const targetPosition = useRef(new THREE.Vector3(0, 0, AGENT_OFFSET));
-  const currentPosition = useRef(new THREE.Vector3(0, 0, AGENT_OFFSET));
-  const targetRotation = useRef(0);
+  const currentPosition = useRef<THREE.Vector3 | null>(null);
+  const currentRotation = useRef(0);
+  const waypoints = useRef<THREE.Vector3[]>([]);
+  const waypointIndex = useRef(0);
+  const isMoving = useRef(false);
   const [trail, setTrail] = useState<THREE.Vector3[]>([]);
   const fileSystem = useAgentStore((state) => state.fileSystem);
   const lastEvent = useAgentStore((state) => state.lastEvent);
 
   const color = agent.color || (agent.agentType === 'main' ? '#00FFFF' : '#FF6600');
+
+  const calculateWaypoints = useCallback((from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3[] => {
+    const points: THREE.Vector3[] = [];
+
+    if (from.distanceTo(to) < 0.1) return [];
+
+    const midX = to.x;
+    const midZ = from.z;
+
+    if (Math.abs(from.x - to.x) > 0.1) {
+      points.push(new THREE.Vector3(midX, 0, midZ));
+    }
+
+    if (Math.abs(midZ - to.z) > 0.1) {
+      points.push(new THREE.Vector3(to.x, 0, to.z));
+    }
+
+    if (points.length === 0 && from.distanceTo(to) > 0.1) {
+      points.push(to.clone());
+    }
+
+    return points;
+  }, []);
 
   useEffect(() => {
     if (agent.currentPath && fileSystem) {
@@ -99,82 +126,114 @@ export default function LightCycle({ agent }: LightCycleProps) {
         const offsetX = Math.sin(offsetAngle) * AGENT_OFFSET;
         const offsetZ = Math.cos(offsetAngle) * AGENT_OFFSET;
 
-        targetPosition.current.set(pos.x + offsetX, 0, pos.z + offsetZ);
-        targetRotation.current = Math.atan2(-offsetX, -offsetZ);
+        const targetPos = new THREE.Vector3(pos.x + offsetX, 0, pos.z + offsetZ);
+
+        if (!currentPosition.current) {
+          currentPosition.current = targetPos.clone();
+          return;
+        }
+
+        const newWaypoints = calculateWaypoints(currentPosition.current, targetPos);
+        if (newWaypoints.length > 0) {
+          waypoints.current = newWaypoints;
+          waypointIndex.current = 0;
+          isMoving.current = true;
+        }
       }
     }
-  }, [agent.currentPath, agent.sessionId, fileSystem]);
+  }, [agent.currentPath, agent.sessionId, fileSystem, calculateWaypoints]);
 
   useFrame((_, delta) => {
-    if (meshRef.current) {
-      currentPosition.current.lerp(targetPosition.current, delta * 3);
-      meshRef.current.position.copy(currentPosition.current);
+    if (!meshRef.current || !currentPosition.current) return;
 
-      const currentRotY = meshRef.current.rotation.y;
-      const rotDiff = targetRotation.current - currentRotY;
-      const normalizedDiff = Math.atan2(Math.sin(rotDiff), Math.cos(rotDiff));
-      meshRef.current.rotation.y += normalizedDiff * delta * 5;
+    if (isMoving.current && waypoints.current.length > 0) {
+      const targetWaypoint = waypoints.current[waypointIndex.current];
+      const direction = targetWaypoint.clone().sub(currentPosition.current);
+      const distance = direction.length();
 
-      if (currentPosition.current.distanceTo(targetPosition.current) > 0.1) {
+      if (distance > 0.05) {
+        const targetRotation = Math.atan2(direction.x, direction.z);
+        const rotDiff = targetRotation - currentRotation.current;
+        const normalizedDiff = Math.atan2(Math.sin(rotDiff), Math.cos(rotDiff));
+        currentRotation.current += normalizedDiff * delta * TURN_SPEED;
+
+        const moveDistance = Math.min(delta * MOVE_SPEED, distance);
+        direction.normalize().multiplyScalar(moveDistance);
+        currentPosition.current.add(direction);
+
         setTrail((prev) => {
-          const newTrail = [...prev, currentPosition.current.clone()];
+          const newTrail = [...prev, currentPosition.current!.clone()];
           return newTrail.slice(-50);
         });
+      } else {
+        currentPosition.current.copy(targetWaypoint);
+        waypointIndex.current++;
+
+        if (waypointIndex.current >= waypoints.current.length) {
+          isMoving.current = false;
+          waypoints.current = [];
+          waypointIndex.current = 0;
+        }
       }
     }
+
+    meshRef.current.position.copy(currentPosition.current);
+    meshRef.current.rotation.y = currentRotation.current;
   });
 
   const toolName = lastEvent?.sessionId === agent.sessionId ? lastEvent.toolName : undefined;
   const targetFile = agent.currentPath?.split('/').pop();
 
   return (
-    <group ref={meshRef}>
-      <CycleBody color={color} />
+    <>
+      <group ref={meshRef}>
+        <CycleBody color={color} />
 
-      <pointLight color={color} intensity={3} distance={10} position={[0, 0.5, 0]} />
+        <pointLight color={color} intensity={3} distance={10} position={[0, 0.5, 0]} />
 
-      <Billboard position={[0, 1.2, 0]}>
-        <Text
-          fontSize={0.22}
-          color={color}
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.02}
-          outlineColor="#000000"
-        >
-          {agent.agentType === 'main' ? '●' : '○'} {getAgentName(agent.sessionId)}
-        </Text>
-      </Billboard>
-
-      {toolName && (
-        <Billboard position={[0, 0.9, 0]}>
+        <Billboard position={[0, 1.2, 0]}>
           <Text
-            fontSize={0.16}
-            color="#FFFF00"
+            fontSize={0.22}
+            color={color}
             anchorX="center"
             anchorY="middle"
-            outlineWidth={0.01}
+            outlineWidth={0.02}
             outlineColor="#000000"
           >
-            {toolName}
+            {agent.agentType === 'main' ? '●' : '○'} {getAgentName(agent.sessionId)}
           </Text>
         </Billboard>
-      )}
 
-      {targetFile && (
-        <Billboard position={[0, 0.65, 0]}>
-          <Text
-            fontSize={0.12}
-            color="#888888"
-            anchorX="center"
-            anchorY="middle"
-          >
-            → {targetFile}
-          </Text>
-        </Billboard>
-      )}
+        {toolName && (
+          <Billboard position={[0, 0.9, 0]}>
+            <Text
+              fontSize={0.16}
+              color="#FFFF00"
+              anchorX="center"
+              anchorY="middle"
+              outlineWidth={0.01}
+              outlineColor="#000000"
+            >
+              {toolName}
+            </Text>
+          </Billboard>
+        )}
+
+        {targetFile && (
+          <Billboard position={[0, 0.65, 0]}>
+            <Text
+              fontSize={0.12}
+              color="#888888"
+              anchorX="center"
+              anchorY="middle"
+            >
+              → {targetFile}
+            </Text>
+          </Billboard>
+        )}
+      </group>
 
       <ActivityTrail points={trail} color={color} />
-    </group>
+    </>
   );
 }

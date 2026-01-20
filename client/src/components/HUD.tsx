@@ -1,11 +1,30 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAgentStore, AgentEvent } from '../stores/agentStore';
 
+function isDirectory(path: string, fileSystem: import('../stores/agentStore').FileSystemNode | null): boolean {
+  if (!fileSystem) return false;
+
+  function findNode(node: import('../stores/agentStore').FileSystemNode): import('../stores/agentStore').FileSystemNode | null {
+    if (node.path === path) return node;
+    if (node.children) {
+      for (const child of node.children) {
+        const found = findNode(child);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  const node = findNode(fileSystem);
+  return node?.type === 'directory';
+}
+
 function SearchPanel({ onClose }: { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const searchQuery = useAgentStore((state) => state.searchQuery);
   const searchResults = useAgentStore((state) => state.searchResults);
   const highlightedPath = useAgentStore((state) => state.highlightedPath);
+  const fileSystem = useAgentStore((state) => state.fileSystem);
   const search = useAgentStore((state) => state.search);
   const setHighlightedPath = useAgentStore((state) => state.setHighlightedPath);
   const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
@@ -22,6 +41,16 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
     }
   }, [searchResults, setHighlightedPath]);
 
+  const navigateToResult = (path: string) => {
+    if (isDirectory(path, fileSystem)) {
+      setCurrentPath(path);
+    } else {
+      const parentPath = path.split('/').slice(0, -1).join('/');
+      setCurrentPath(parentPath);
+    }
+    onClose();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       onClose();
@@ -36,9 +65,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
       setSelectedIndex(newIndex);
       setHighlightedPath(searchResults[newIndex]);
     } else if (e.key === 'Enter' && highlightedPath) {
-      const parentPath = highlightedPath.split('/').slice(0, -1).join('/');
-      setCurrentPath(parentPath);
-      onClose();
+      navigateToResult(highlightedPath);
     }
   };
 
@@ -113,9 +140,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
               onClick={() => {
                 setSelectedIndex(i);
                 setHighlightedPath(path);
-                const parentPath = path.split('/').slice(0, -1).join('/');
-                setCurrentPath(parentPath);
-                onClose();
+                navigateToResult(path);
               }}
               style={{
                 padding: '10px 12px',
@@ -218,32 +243,192 @@ function LogPanel({ sessionId, onClose }: { sessionId: string; onClose: () => vo
             No events recorded
           </div>
         ) : (
-          [...logs].reverse().map((event: AgentEvent, i: number) => (
-            <div
-              key={i}
-              style={{
-                padding: '8px',
-                marginBottom: '4px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: '4px',
-                borderLeft: `2px solid ${event.toolName ? '#FFFF00' : '#666'}`,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ color: '#FFFF00', fontSize: '11px' }}>
-                  {event.toolName || event.hookEvent}
-                </span>
-                <span style={{ color: '#444', fontSize: '9px' }}>
-                  {new Date(event.timestamp).toLocaleTimeString()}
-                </span>
-              </div>
-              {event.filePath && (
-                <div style={{ color: '#888', fontSize: '10px', wordBreak: 'break-all' }}>
-                  → {event.filePath.split('/').slice(-2).join('/')}
+          [...logs].reverse().map((event: AgentEvent, i: number) => {
+            const isMessage = event.hookEvent === 'AssistantMessage' || event.hookEvent === 'Result';
+            const isResult = event.hookEvent === 'Result';
+            const borderColor = isResult ? '#00FF00' : isMessage ? '#00FFFF' : event.toolName ? '#FFFF00' : '#666';
+
+            return (
+              <div
+                key={i}
+                style={{
+                  padding: '8px',
+                  marginBottom: '4px',
+                  background: isResult ? 'rgba(0, 255, 0, 0.05)' : 'rgba(255, 255, 255, 0.03)',
+                  borderRadius: '4px',
+                  borderLeft: `2px solid ${borderColor}`,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ color: borderColor, fontSize: '11px' }}>
+                    {event.toolName || event.hookEvent}
+                  </span>
+                  <span style={{ color: '#444', fontSize: '9px' }}>
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </span>
                 </div>
-              )}
+                {event.filePath && (
+                  <div style={{ color: '#888', fontSize: '10px', wordBreak: 'break-all' }}>
+                    → {event.filePath.split('/').slice(-2).join('/')}
+                  </div>
+                )}
+                {event.message && (
+                  <div style={{
+                    color: '#CCC',
+                    fontSize: '11px',
+                    marginTop: '4px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    maxHeight: '100px',
+                    overflow: 'auto',
+                  }}>
+                    {event.message.slice(0, 500)}{event.message.length > 500 ? '...' : ''}
+                  </div>
+                )}
+                {isResult && event.details && (
+                  <div style={{ fontSize: '9px', color: '#666', marginTop: '4px' }}>
+                    {String(event.details.num_turns)} turns • ${Number(event.details.cost_usd || 0).toFixed(4)}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AllEventsPanel({ onClose }: { onClose: () => void }) {
+  const allEvents = useAgentStore((state) => state.allEvents);
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      width: '500px',
+      maxHeight: '90vh',
+      background: 'rgba(0, 0, 20, 0.95)',
+      border: '1px solid #FF6600',
+      borderRadius: '8px',
+      padding: '16px',
+      fontFamily: 'monospace',
+      color: '#FFF',
+      boxShadow: '0 0 20px rgba(255, 102, 0, 0.4)',
+      zIndex: 1001,
+    }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '12px',
+        borderBottom: '1px solid rgba(255, 102, 0, 0.4)',
+        paddingBottom: '8px',
+      }}>
+        <div>
+          <div style={{ color: '#FF6600', fontSize: '14px', fontWeight: 'bold' }}>
+            ◆ ALL EVENTS LOG
+          </div>
+          <div style={{ fontSize: '10px', color: '#666' }}>
+            Real-time hook events from all agents
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'none',
+            border: '1px solid #FF0066',
+            color: '#FF0066',
+            padding: '4px 12px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            borderRadius: '3px',
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>
+        {allEvents.length} events captured
+      </div>
+
+      <div style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+        {allEvents.length === 0 ? (
+          <div style={{ color: '#666', textAlign: 'center', padding: '30px' }}>
+            <div style={{ fontSize: '24px', marginBottom: '12px' }}>📡</div>
+            <div style={{ marginBottom: '8px' }}>No events received yet</div>
+            <div style={{ fontSize: '10px', color: '#444' }}>
+              Events will appear here when Claude Code hooks fire.
+              <br />
+              Make sure the server is running and hooks are configured.
             </div>
-          ))
+          </div>
+        ) : (
+          [...allEvents].reverse().map((event: AgentEvent, i: number) => {
+            const isMessage = event.hookEvent === 'AssistantMessage' || event.hookEvent === 'Result';
+            const isResult = event.hookEvent === 'Result';
+
+            return (
+              <div
+                key={i}
+                style={{
+                  padding: '10px',
+                  marginBottom: '6px',
+                  background: isResult ? 'rgba(0, 255, 0, 0.05)' : 'rgba(255, 255, 255, 0.03)',
+                  borderRadius: '4px',
+                  borderLeft: `3px solid ${event.agentType === 'main' ? '#00FFFF' : '#FF6600'}`,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{
+                      color: event.agentType === 'main' ? '#00FFFF' : '#FF6600',
+                      fontSize: '10px',
+                      padding: '2px 6px',
+                      background: 'rgba(0,0,0,0.3)',
+                      borderRadius: '3px',
+                    }}>
+                      {event.agentType?.toUpperCase() || 'MAIN'}
+                    </span>
+                    <span style={{ color: isResult ? '#00FF00' : isMessage ? '#00FFFF' : '#FFFF00', fontSize: '12px', fontWeight: 'bold' }}>
+                      {event.toolName || event.hookEvent}
+                    </span>
+                  </div>
+                  <span style={{ color: '#444', fontSize: '9px' }}>
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px' }}>
+                  Session: {event.sessionId.slice(0, 20)}...
+                </div>
+                {event.filePath && (
+                  <div style={{ color: '#888', fontSize: '11px', wordBreak: 'break-all' }}>
+                    → {event.filePath}
+                  </div>
+                )}
+                {event.message && (
+                  <div style={{
+                    color: '#CCC',
+                    fontSize: '11px',
+                    marginTop: '4px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    maxHeight: '80px',
+                    overflow: 'auto',
+                  }}>
+                    {event.message.slice(0, 300)}{event.message.length > 300 ? '...' : ''}
+                  </div>
+                )}
+                {isResult && event.details && (
+                  <div style={{ fontSize: '9px', color: '#666', marginTop: '4px' }}>
+                    {String(event.details.num_turns)} turns • ${Number(event.details.cost_usd || 0).toFixed(4)}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
@@ -255,12 +440,15 @@ export default function HUD() {
   const [isSpawning, setIsSpawning] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
+  const [showAllEvents, setShowAllEvents] = useState(false);
   const currentPath = useAgentStore((state) => state.currentPath);
   const agents = useAgentStore((state) => state.agents);
   const connected = useAgentStore((state) => state.connected);
   const selectedAgentId = useAgentStore((state) => state.selectedAgentId);
   const selectAgent = useAgentStore((state) => state.selectAgent);
+  const removeAgent = useAgentStore((state) => state.removeAgent);
   const clearSearch = useAgentStore((state) => state.clearSearch);
+  const allEventsCount = useAgentStore((state) => state.allEvents.length);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -303,6 +491,16 @@ export default function HUD() {
       await fetch(`/api/agents/${sessionId}`, { method: 'DELETE' });
     } catch (err) {
       console.error('Failed to kill agent:', err);
+    }
+  };
+
+  const handleRemove = async (sessionId: string) => {
+    try {
+      await fetch(`/api/agents/${sessionId}`, { method: 'DELETE' });
+      removeAgent(sessionId);
+    } catch (err) {
+      console.error('Failed to remove agent:', err);
+      removeAgent(sessionId);
     }
   };
 
@@ -425,6 +623,35 @@ export default function HUD() {
               </div>
             </div>
 
+            <button
+              onClick={() => setShowAllEvents(true)}
+              style={{
+                width: '100%',
+                marginBottom: '12px',
+                padding: '8px',
+                background: 'rgba(255, 102, 0, 0.1)',
+                border: '1px solid #FF6600',
+                borderRadius: '4px',
+                color: '#FF6600',
+                cursor: 'pointer',
+                fontFamily: 'monospace',
+                fontSize: '11px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span>◆ VIEW ALL EVENTS</span>
+              <span style={{
+                background: '#FF6600',
+                color: '#000',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                fontSize: '10px',
+                fontWeight: 'bold',
+              }}>{allEventsCount}</span>
+            </button>
+
             <div>
               <div style={{
                 fontSize: '11px',
@@ -468,8 +695,14 @@ export default function HUD() {
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: '11px', color: agent.color, fontWeight: 'bold' }}>
+                        <div style={{ fontSize: '11px', color: agent.color, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           {agent.agentType === 'main' ? '●' : '○'} {getAgentName(agent.sessionId)}
+                          {agent.status === 'completed' && (
+                            <span style={{ fontSize: '9px', color: '#00FF00', padding: '1px 4px', background: 'rgba(0,255,0,0.1)', borderRadius: '3px' }}>DONE</span>
+                          )}
+                          {agent.status === 'error' && (
+                            <span style={{ fontSize: '9px', color: '#FF0000', padding: '1px 4px', background: 'rgba(255,0,0,0.1)', borderRadius: '3px' }}>ERROR</span>
+                          )}
                         </div>
                         <div style={{ fontSize: '9px', color: '#666' }}>
                           {agent.currentPath?.split('/').pop() || 'idle'}
@@ -490,7 +723,7 @@ export default function HUD() {
                         >
                           LOGS
                         </button>
-                        {agent.sessionId.startsWith('grid-') && (
+                        {agent.sessionId.startsWith('grid-') && agent.status === 'running' ? (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleKill(agent.sessionId); }}
                             style={{
@@ -505,6 +738,21 @@ export default function HUD() {
                           >
                             KILL
                           </button>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemove(agent.sessionId); }}
+                            style={{
+                              background: 'none',
+                              border: '1px solid #888',
+                              color: '#888',
+                              padding: '4px 8px',
+                              cursor: 'pointer',
+                              fontSize: '10px',
+                              borderRadius: '3px',
+                            }}
+                          >
+                            REMOVE
+                          </button>
                         )}
                       </div>
                     </div>
@@ -516,8 +764,12 @@ export default function HUD() {
         )}
       </div>
 
-      {selectedAgentId && (
+      {selectedAgentId && !showAllEvents && (
         <LogPanel sessionId={selectedAgentId} onClose={() => selectAgent(null)} />
+      )}
+
+      {showAllEvents && (
+        <AllEventsPanel onClose={() => setShowAllEvents(false)} />
       )}
 
       {showSearch && (
