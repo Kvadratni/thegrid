@@ -55,6 +55,7 @@ interface AgentStore {
   searchResults: string[];
   highlightedPath: string | null;
   filesystemDirty: number;
+  teleportCounter: number;
 
   setAgents: (agents: AgentState[]) => void;
   setFileSystem: (fs: FileSystemNode) => void;
@@ -71,6 +72,7 @@ interface AgentStore {
   search: (query: string) => void;
   clearSearch: () => void;
   setHighlightedPath: (path: string | null) => void;
+  teleportToOrigin: () => void;
 }
 
 function searchFileSystem(node: FileSystemNode, query: string, results: string[] = []): string[] {
@@ -100,13 +102,18 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   searchResults: [],
   highlightedPath: null,
   filesystemDirty: 0,
+  teleportCounter: 0,
 
   setAgents: (agents) => set({ agents }),
 
   setFileSystem: (fs) => set({ fileSystem: fs }),
 
   setCurrentPath: (path) => {
-    set({ currentPath: path });
+    set({ currentPath: path, teleportCounter: get().teleportCounter + 1 });
+  },
+
+  teleportToOrigin: () => {
+    set({ teleportCounter: get().teleportCounter + 1 });
   },
 
   setLastEvent: (event) => set({ lastEvent: event }),

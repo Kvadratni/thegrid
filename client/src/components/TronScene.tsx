@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import Grid from './Grid';
 import FileSystem from './FileSystem';
 import LightCycle from './LightCycle';
@@ -8,6 +9,17 @@ import { useAgentStore } from '../stores/agentStore';
 export default function TronScene() {
   const agents = useAgentStore((state) => state.agents);
   const fileSystem = useAgentStore((state) => state.fileSystem);
+  const currentPath = useAgentStore((state) => state.currentPath);
+
+  // Only show agents that are working within the current directory
+  const visibleAgents = useMemo(() => {
+    if (!currentPath) return agents;
+    return agents.filter((agent) => {
+      if (!agent.currentPath) return false;
+      // Agent is visible if their working path is within the current directory
+      return agent.currentPath.startsWith(currentPath);
+    });
+  }, [agents, currentPath]);
 
   return (
     <>
@@ -21,7 +33,7 @@ export default function TronScene() {
 
       {fileSystem && <FileSystem node={fileSystem} position={[0, 0, 0]} />}
 
-      {agents.map((agent) => (
+      {visibleAgents.map((agent) => (
         <LightCycle
           key={`${agent.sessionId}-${agent.agentType}`}
           agent={agent}

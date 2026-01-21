@@ -172,24 +172,95 @@ function Building({ layout, parentX = 0, parentZ = 0 }: { layout: LayoutNode; pa
 
 const ROAD_WIDTH = 0.8;
 const ROAD_HEIGHT = 0.02;
+const NODE_SIZE = ROAD_WIDTH * 1.4;
+
+function RoadNode({ x, z, color = '#FF6600' }: { x: number; z: number; color?: string }) {
+  const camPos = useCameraPosition();
+
+  const dx = x - camPos.x;
+  const dz = z - camPos.z;
+  const distanceSq = dx * dx + dz * dz;
+
+  const nodeMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+    color: '#1a1a2e',
+    emissive: '#0a0a15',
+    emissiveIntensity: 0.5,
+  }), []);
+
+  const edgeLine = useMemo(() => {
+    const size = NODE_SIZE;
+    const points = [
+      new THREE.Vector3(-size / 2, ROAD_HEIGHT + 0.01, -size / 2),
+      new THREE.Vector3(size / 2, ROAD_HEIGHT + 0.01, -size / 2),
+      new THREE.Vector3(size / 2, ROAD_HEIGHT + 0.01, size / 2),
+      new THREE.Vector3(-size / 2, ROAD_HEIGHT + 0.01, size / 2),
+      new THREE.Vector3(-size / 2, ROAD_HEIGHT + 0.01, -size / 2),
+    ];
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
+    return new THREE.Line(geometry, material);
+  }, [color]);
+
+  if (distanceSq > RENDER_DISTANCE_SQ) {
+    return null;
+  }
+
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, ROAD_HEIGHT / 2, 0]}>
+        <boxGeometry args={[NODE_SIZE, ROAD_HEIGHT, NODE_SIZE]} />
+        <primitive object={nodeMaterial} attach="material" />
+      </mesh>
+      <primitive object={edgeLine} />
+    </group>
+  );
+}
 
 function RoadSegment({
   start,
   end,
-  color = '#FF6600'
+  color = '#FF6600',
+  shortenStart = false,
+  shortenEnd = false,
 }: {
   start: [number, number];
   end: [number, number];
   color?: string;
+  shortenStart?: boolean;
+  shortenEnd?: boolean;
 }) {
   const camPos = useCameraPosition();
   const [x1, z1] = start;
   const [x2, z2] = end;
 
   const isHorizontal = z1 === z2;
-  const length = isHorizontal ? Math.abs(x2 - x1) : Math.abs(z2 - z1);
-  const centerX = (x1 + x2) / 2;
-  const centerZ = (z1 + z2) / 2;
+  const nodeOffset = NODE_SIZE / 2;
+
+  // Shorten the segment to stop at node edges
+  let adjustedX1 = x1;
+  let adjustedZ1 = z1;
+  let adjustedX2 = x2;
+  let adjustedZ2 = z2;
+
+  if (shortenStart) {
+    if (isHorizontal) {
+      adjustedX1 = x1 < x2 ? x1 + nodeOffset : x1 - nodeOffset;
+    } else {
+      adjustedZ1 = z1 < z2 ? z1 + nodeOffset : z1 - nodeOffset;
+    }
+  }
+
+  if (shortenEnd) {
+    if (isHorizontal) {
+      adjustedX2 = x2 > x1 ? x2 - nodeOffset : x2 + nodeOffset;
+    } else {
+      adjustedZ2 = z2 > z1 ? z2 - nodeOffset : z2 + nodeOffset;
+    }
+  }
+
+  const length = isHorizontal ? Math.abs(adjustedX2 - adjustedX1) : Math.abs(adjustedZ2 - adjustedZ1);
+  const centerX = (adjustedX1 + adjustedX2) / 2;
+  const centerZ = (adjustedZ1 + adjustedZ2) / 2;
 
   const roadMaterial = useMemo(() => new THREE.MeshStandardMaterial({
     color: '#1a1a2e',
@@ -203,15 +274,15 @@ function RoadSegment({
     const points2: THREE.Vector3[] = [];
 
     if (isHorizontal) {
-      points1.push(new THREE.Vector3(x1, ROAD_HEIGHT + 0.01, z1 - halfWidth));
-      points1.push(new THREE.Vector3(x2, ROAD_HEIGHT + 0.01, z2 - halfWidth));
-      points2.push(new THREE.Vector3(x1, ROAD_HEIGHT + 0.01, z1 + halfWidth));
-      points2.push(new THREE.Vector3(x2, ROAD_HEIGHT + 0.01, z2 + halfWidth));
+      points1.push(new THREE.Vector3(adjustedX1, ROAD_HEIGHT + 0.01, adjustedZ1 - halfWidth));
+      points1.push(new THREE.Vector3(adjustedX2, ROAD_HEIGHT + 0.01, adjustedZ2 - halfWidth));
+      points2.push(new THREE.Vector3(adjustedX1, ROAD_HEIGHT + 0.01, adjustedZ1 + halfWidth));
+      points2.push(new THREE.Vector3(adjustedX2, ROAD_HEIGHT + 0.01, adjustedZ2 + halfWidth));
     } else {
-      points1.push(new THREE.Vector3(x1 - halfWidth, ROAD_HEIGHT + 0.01, z1));
-      points1.push(new THREE.Vector3(x2 - halfWidth, ROAD_HEIGHT + 0.01, z2));
-      points2.push(new THREE.Vector3(x1 + halfWidth, ROAD_HEIGHT + 0.01, z1));
-      points2.push(new THREE.Vector3(x2 + halfWidth, ROAD_HEIGHT + 0.01, z2));
+      points1.push(new THREE.Vector3(adjustedX1 - halfWidth, ROAD_HEIGHT + 0.01, adjustedZ1));
+      points1.push(new THREE.Vector3(adjustedX2 - halfWidth, ROAD_HEIGHT + 0.01, adjustedZ2));
+      points2.push(new THREE.Vector3(adjustedX1 + halfWidth, ROAD_HEIGHT + 0.01, adjustedZ1));
+      points2.push(new THREE.Vector3(adjustedX2 + halfWidth, ROAD_HEIGHT + 0.01, adjustedZ2));
     }
 
     const geo1 = new THREE.BufferGeometry().setFromPoints(points1);
@@ -219,7 +290,7 @@ function RoadSegment({
     const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
 
     return [new THREE.Line(geo1, mat), new THREE.Line(geo2, mat.clone())];
-  }, [x1, z1, x2, z2, isHorizontal, color]);
+  }, [adjustedX1, adjustedZ1, adjustedX2, adjustedZ2, isHorizontal, color]);
 
   // Distance culling for roads
   const dx = centerX - camPos.x;
@@ -249,14 +320,16 @@ function Road({ from, to, color = '#FF6600' }: { from: [number, number]; to: [nu
   const [x1, z1] = from;
   const [x2, z2] = to;
 
+  // Straight road
   if (x1 === x2 || z1 === z2) {
-    return <RoadSegment start={from} end={to} color={color} />;
+    return <RoadSegment start={from} end={to} color={color} shortenStart shortenEnd />;
   }
 
+  // L-shaped road: shorten at all connection points (start, corner, end)
   return (
     <group>
-      <RoadSegment start={[x1, z1]} end={[x2, z1]} color={color} />
-      <RoadSegment start={[x2, z1]} end={[x2, z2]} color={color} />
+      <RoadSegment start={[x1, z1]} end={[x2, z1]} color={color} shortenStart shortenEnd />
+      <RoadSegment start={[x2, z1]} end={[x2, z2]} color={color} shortenStart shortenEnd />
     </group>
   );
 }
@@ -366,12 +439,20 @@ export default function FileSystem({ node, position }: FileSystemProps) {
   const fileEffects = useAgentStore((state) => state.fileEffects);
   const layout = useMemo(() => calculateLayout(node), [node]);
 
-  const roads = useMemo(() => {
-    const result: { from: [number, number]; to: [number, number] }[] = [];
+  const { roads, nodes } = useMemo(() => {
+    const roadList: { from: [number, number]; to: [number, number] }[] = [];
+    const nodeSet = new Set<string>();
+
+    function addNode(x: number, z: number) {
+      nodeSet.add(`${x},${z}`);
+    }
 
     function collectRoads(layoutNode: LayoutNode, parentX: number, parentZ: number) {
       const children = layoutNode.children || [];
       if (children.length === 0) return;
+
+      // Add node at parent position
+      addNode(parentX, parentZ);
 
       // Connect parent to each direct child
       children.forEach(child => {
@@ -379,10 +460,18 @@ export default function FileSystem({ node, position }: FileSystemProps) {
         const childZ = parentZ + child.z;
 
         // L-shaped road from parent to child
-        result.push({
+        roadList.push({
           from: [parentX, parentZ],
           to: [childX, childZ],
         });
+
+        // Add node at child position
+        addNode(childX, childZ);
+
+        // Add node at corner of L-shape (if it's an L-shape)
+        if (parentX !== childX && parentZ !== childZ) {
+          addNode(childX, parentZ);
+        }
 
         // Recurse into directory children
         if (child.node.type === 'directory' && child.children && child.children.length > 0) {
@@ -392,7 +481,13 @@ export default function FileSystem({ node, position }: FileSystemProps) {
     }
 
     collectRoads(layout, 0, 0);
-    return result;
+
+    const nodeList = Array.from(nodeSet).map(key => {
+      const [x, z] = key.split(',').map(Number);
+      return { x, z };
+    });
+
+    return { roads: roadList, nodes: nodeList };
   }, [layout]);
 
   const effectPositions = useMemo(() => {
@@ -408,6 +503,9 @@ export default function FileSystem({ node, position }: FileSystemProps) {
         <ParentPortal currentPath={currentPath} />
         {roads.map((road, i) => (
           <Road key={i} from={road.from} to={road.to} />
+        ))}
+        {nodes.map((node, i) => (
+          <RoadNode key={`node-${i}`} x={node.x} z={node.z} />
         ))}
         <Building layout={layout} />
 

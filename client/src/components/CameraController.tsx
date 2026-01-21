@@ -2,14 +2,19 @@ import { useRef, useEffect } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { useAgentStore } from '../stores/agentStore';
 
 const MOVE_SPEED = 4.5;
 const DAMPING = 0.9;
+const ORIGIN_POSITION = { x: 0, y: 15, z: -20 };
+const ORIGIN_TARGET = { x: 0, y: 0, z: 10 };
 
 export default function CameraController() {
   const { camera, gl } = useThree();
   const velocity = useRef(new THREE.Vector3());
   const controlsRef = useRef<OrbitControls | null>(null);
+  const teleportCounter = useAgentStore((state) => state.teleportCounter);
+  const lastTeleportRef = useRef(0);
   const keys = useRef({
     w: false,
     a: false,
@@ -17,6 +22,21 @@ export default function CameraController() {
     d: false,
     shift: false,
   });
+
+  // Teleport to origin when teleportCounter changes
+  useEffect(() => {
+    if (teleportCounter > lastTeleportRef.current) {
+      lastTeleportRef.current = teleportCounter;
+
+      camera.position.set(ORIGIN_POSITION.x, ORIGIN_POSITION.y, ORIGIN_POSITION.z);
+      velocity.current.set(0, 0, 0);
+
+      if (controlsRef.current) {
+        controlsRef.current.target.set(ORIGIN_TARGET.x, ORIGIN_TARGET.y, ORIGIN_TARGET.z);
+        controlsRef.current.update();
+      }
+    }
+  }, [teleportCounter, camera]);
 
   useEffect(() => {
     const controls = new OrbitControls(camera, gl.domElement);

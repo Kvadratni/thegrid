@@ -448,6 +448,7 @@ export default function HUD() {
   const selectAgent = useAgentStore((state) => state.selectAgent);
   const removeAgent = useAgentStore((state) => state.removeAgent);
   const clearSearch = useAgentStore((state) => state.clearSearch);
+  const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
   const allEventsCount = useAgentStore((state) => state.allEvents.length);
 
   useEffect(() => {
@@ -502,6 +503,13 @@ export default function HUD() {
       console.error('Failed to remove agent:', err);
       removeAgent(sessionId);
     }
+  };
+
+  const handleGoToAgent = (agentPath: string | undefined) => {
+    if (!agentPath) return;
+    // Get parent folder of the file/folder the agent is working on
+    const parentPath = agentPath.split('/').slice(0, -1).join('/') || agentPath;
+    setCurrentPath(parentPath);
   };
 
   return (
@@ -709,6 +717,23 @@ export default function HUD() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '4px' }}>
+                        {agent.currentPath && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleGoToAgent(agent.currentPath); }}
+                            style={{
+                              background: 'none',
+                              border: '1px solid #FFFF00',
+                              color: '#FFFF00',
+                              padding: '4px 8px',
+                              cursor: 'pointer',
+                              fontSize: '10px',
+                              borderRadius: '3px',
+                            }}
+                            title={`Go to ${agent.currentPath}`}
+                          >
+                            GO TO
+                          </button>
+                        )}
                         <button
                           onClick={(e) => { e.stopPropagation(); selectAgent(agent.sessionId); }}
                           style={{
