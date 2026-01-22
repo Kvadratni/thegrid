@@ -4,6 +4,7 @@ import { Text, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import { AgentState, useAgentStore } from '../stores/agentStore';
 import ActivityTrail from './ActivityTrail';
+import AgentActivity from './effects/AgentActivity';
 import { getPositionForPath } from '../utils/fileSystemLayout';
 
 interface LightCycleProps {
@@ -184,10 +185,21 @@ export default function LightCycle({ agent }: LightCycleProps) {
   const toolName = lastEvent?.sessionId === agent.sessionId ? lastEvent.toolName : undefined;
   const targetFile = agent.currentPath?.split('/').pop();
 
+  // Check if agent is actively running (has recent activity)
+  const isActive = agent.status === 'running' && !!toolName;
+
   return (
     <>
       <group ref={meshRef}>
         <CycleBody color={color} />
+
+        {/* Activity effect when running */}
+        <AgentActivity
+          position={[0, 0, 0]}
+          color={color}
+          isActive={isActive}
+          toolName={toolName}
+        />
 
         <pointLight color={color} intensity={3} distance={10} position={[0, 0.5, 0]} />
 

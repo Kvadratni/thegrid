@@ -63,7 +63,7 @@ function getFileColor(extension?: string): string {
   return FILE_COLORS[extension.toLowerCase()] || FILE_COLORS.default;
 }
 
-function Building({ layout, parentX = 0, parentZ = 0 }: { layout: LayoutNode; parentX?: number; parentZ?: number }) {
+function Building({ layout, parentX = 0, parentZ = 0, isRoot = false }: { layout: LayoutNode; parentX?: number; parentZ?: number; isRoot?: boolean }) {
   const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
   const camPos = useCameraPosition();
 
@@ -71,7 +71,8 @@ function Building({ layout, parentX = 0, parentZ = 0 }: { layout: LayoutNode; pa
   const worldZ = parentZ + layout.z;
 
   const isDirectory = layout.node.type === 'directory';
-  const color = isDirectory ? '#00FFFF' : getFileColor(layout.node.extension);
+  // Root is white/light blue to match portal, other directories are cyan
+  const color = isRoot ? '#AADDFF' : isDirectory ? '#00FFFF' : getFileColor(layout.node.extension);
   const height = isDirectory ? 0.3 : Math.max(1, Math.min(6, (layout.node.size || 1000) / 3000));
 
   const darkMaterial = useMemo(() => {
@@ -381,7 +382,7 @@ function ParentPortal({ currentPath }: { currentPath: string }) {
 
   return (
     <group position={[0, 0, -8]}>
-      <Road from={[0, 0]} to={[0, 8]} color="#FF6600" />
+      <Road from={[0, 0]} to={[0, 8]} color="#AADDFF" />
 
       <group
         onClick={handleClick}
@@ -507,7 +508,8 @@ export default function FileSystem({ node, position }: FileSystemProps) {
         {nodes.map((node, i) => (
           <RoadNode key={`node-${i}`} x={node.x} z={node.z} />
         ))}
-        <Building layout={layout} />
+        <RoadNode x={0} z={0} color="#AADDFF" />
+        <Building layout={layout} isRoot />
 
         {effectPositions.map(({ effect, pos }) => (
           <FileEffect

@@ -129,18 +129,28 @@ function calculateSubtreeSize(node: FileSystemNode): { width: number; depth: num
   };
 }
 
-// Direction vectors for 4-way spread
-const DIRECTIONS = [
+// Direction vectors for root level (3-way, avoiding portal in -Z)
+const ROOT_DIRECTIONS = [
   { dx: 0, dz: 1 },   // North (+Z)
   { dx: 1, dz: 0 },   // East (+X)
-  { dx: 0, dz: -1 },  // South (-Z)
   { dx: -1, dz: 0 },  // West (-X)
 ];
+
+// Portal is at z=-8 in world coords, reserve that area
+const PORTAL_RESERVE_Z = -4; // In grid cells (z=-8 / GRID_UNIT)
+const PORTAL_RESERVE_WIDTH = 4; // Grid cells to reserve around portal
 
 export function calculateLayout(root: FileSystemNode): LayoutNode {
   const grid = new OccupancyGrid();
   // Reserve center for root
   grid.occupy(0, 0, ITEM_CELLS, ITEM_CELLS, 2);
+
+  // Reserve portal area (z = -8 in world coords, roughly -4 to -6 in grid cells)
+  for (let x = -PORTAL_RESERVE_WIDTH; x <= PORTAL_RESERVE_WIDTH; x++) {
+    for (let z = PORTAL_RESERVE_Z; z >= PORTAL_RESERVE_Z - 3; z--) {
+      grid.occupy(x, z, 1, 1, 2);
+    }
+  }
 
   const layout = layoutWithGrid(root, grid, 0, 0, true);
 
@@ -184,15 +194,15 @@ function layoutWithGrid(
       size: calculateSubtreeSize(dir)
     }));
 
-    // Group directories by direction (4 quadrants)
-    const quadrants: typeof dirSizes[] = [[], [], [], []];
+    // Group directories by direction (3 directions at root - avoid portal in -Z)
+    const quadrants: typeof dirSizes[] = [[], [], []];
     dirSizes.forEach((item, i) => {
-      quadrants[i % 4].push(item);
+      quadrants[i % 3].push(item);
     });
 
     // Place each quadrant's directories
     quadrants.forEach((quadrant, dirIndex) => {
-      const direction = DIRECTIONS[dirIndex];
+      const direction = ROOT_DIRECTIONS[dirIndex];
       let offset = ITEM_CELLS + 1; // Start just outside center
 
       quadrant.forEach((item) => {
@@ -203,8 +213,9 @@ function layoutWithGrid(
         grid.occupy(gx, gz, ITEM_CELLS, ITEM_CELLS, 2);
 
         const childLayout = layoutWithGrid(item.dir, grid, gx, gz, false);
-        childLayout.x = gx * GRID_UNIT;
-        childLayout.z = gz * GRID_UNIT;
+        // Position relative to parent
+        childLayout.x = (gx - parentGx) * GRID_UNIT;
+        childLayout.z = (gz - parentGz) * GRID_UNIT;
         layout.children!.push(childLayout);
 
         // Move offset by the size needed for this subtree
@@ -225,8 +236,9 @@ function layoutWithGrid(
 
       layout.children!.push({
         node: file,
-        x: gx * GRID_UNIT,
-        z: gz * GRID_UNIT,
+        // Position relative to parent
+        x: (gx - parentGx) * GRID_UNIT,
+        z: (gz - parentGz) * GRID_UNIT,
         width: GRID_UNIT,
         depth: GRID_UNIT,
       });
@@ -248,15 +260,17 @@ function layoutWithGrid(
       if (item.type === 'directory') {
         grid.occupy(gx, gz, ITEM_CELLS, ITEM_CELLS, 2);
         const childLayout = layoutWithGrid(item, grid, gx, gz, false);
-        childLayout.x = gx * GRID_UNIT;
-        childLayout.z = gz * GRID_UNIT;
+        // Position relative to parent
+        childLayout.x = (gx - parentGx) * GRID_UNIT;
+        childLayout.z = (gz - parentGz) * GRID_UNIT;
         layout.children!.push(childLayout);
       } else {
         grid.occupy(gx, gz, ITEM_CELLS, ITEM_CELLS, 1);
         layout.children!.push({
           node: item,
-          x: gx * GRID_UNIT,
-          z: gz * GRID_UNIT,
+          // Position relative to parent
+          x: (gx - parentGx) * GRID_UNIT,
+          z: (gz - parentGz) * GRID_UNIT,
           width: GRID_UNIT,
           depth: GRID_UNIT,
         });
