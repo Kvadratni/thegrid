@@ -2,11 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
-import { spawn, ChildProcess, execSync } from 'child_process';
+import { spawn, ChildProcess, exec } from 'child_process';
 import { readdir, stat } from 'fs/promises';
 import { join, extname, basename } from 'path';
 import { randomUUID } from 'crypto';
+import { promisify } from 'util';
 import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo } from './types.js';
+
+const execAsync = promisify(exec);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -30,111 +33,74 @@ const AGENT_COLORS = {
 let watchedDirectory = '';
 let cachedProcesses: ProcessInfo[] = [];
 
-function getRunningProcesses(basePath: string): ProcessInfo[] {
+function getPathDepth(path: string): number {
+  return path.split('/').filter(Boolean).length;
+}
+
+async function getRunningProcesses(basePath: string): Promise<ProcessInfo[]> {
+  // Only scan if path is 3 levels deep or less
+  if (getPathDepth(basePath) > 3) {
+    return [];
+  }
+
   try {
+    const { stdout } = await execAsync(`ps aux | grep -E "${basePath}" | grep -v grep`, { timeout: 2000 });
+    const lines = stdout.trim().split('\n').filter(Boolean);
     const processes: ProcessInfo[] = [];
 
-    // Get all node, python, ruby, go processes
-    const interestingProcesses = ['node', 'python', 'python3', 'ruby', 'go', 'java', 'cargo'];
+    for (const line of lines) {
+      const parts = line.split(/\s+/);
+      const pid = parseInt(parts[1], 10);
+      if (isNaN(pid) || pid === process.pid) continue;
 
-    for (const procName of interestingProcesses) {
-      try {
-        const pgrep = execSync(`pgrep -f ${procName} 2>/dev/null || true`, {
-          encoding: 'utf-8',
-          timeout: 2000,
-        }).trim();
+      const fullCommand = parts.slice(10).join(' ');
 
-        if (!pgrep) continue;
+      // Skip if doesn't actually contain the path
+      if (!fullCommand.includes(basePath)) continue;
 
-        const pids = pgrep.split('\n').filter(Boolean);
+      // Get friendly name from command
+      let name = 'Process';
+      if (fullCommand.includes('vite')) name = 'Vite';
+      else if (fullCommand.includes('next')) name = 'Next.js';
+      else if (fullCommand.includes('webpack')) name = 'Webpack';
+      else if (fullCommand.includes('nodemon')) name = 'Nodemon';
+      else if (fullCommand.includes('ts-node')) name = 'TypeScript';
+      else if (fullCommand.includes('flask')) name = 'Flask';
+      else if (fullCommand.includes('django')) name = 'Django';
+      else if (fullCommand.includes('cargo')) name = 'Cargo';
+      else if (fullCommand.includes('go run')) name = 'Go';
+      else if (fullCommand.includes('python')) name = 'Python';
+      else if (fullCommand.includes('node')) name = 'Node.js';
 
-        for (const pidStr of pids) {
-          const pid = parseInt(pidStr, 10);
-          if (isNaN(pid) || pid === process.pid) continue;
+      // Try to extract port from command
+      let port: number | undefined;
+      const portMatch = fullCommand.match(/(?:--port|PORT=|-p)\s*(\d{4,5})/i) || fullCommand.match(/:(\d{4,5})/);
+      if (portMatch) {
+        port = parseInt(portMatch[1], 10);
+      }
 
-          try {
-            // Get cwd using lsof
-            const cwd = execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null | grep '^n' | cut -c2-`, {
-              encoding: 'utf-8',
-              timeout: 1000,
-            }).trim();
-
-            if (!cwd || !cwd.startsWith(basePath)) continue;
-
-            // Get command
-            const psOutput = execSync(`ps -p ${pid} -o comm=,args= 2>/dev/null`, {
-              encoding: 'utf-8',
-              timeout: 1000,
-            }).trim();
-
-            const comm = psOutput.split(' ')[0] || procName;
-            const fullCommand = psOutput;
-
-            // Try to detect the port
-            let port: number | undefined;
-            try {
-              const portOutput = execSync(`lsof -iTCP -sTCP:LISTEN -P -n -p ${pid} 2>/dev/null | tail -1`, {
-                encoding: 'utf-8',
-                timeout: 1000,
-              }).trim();
-              const portMatch = portOutput.match(/:(\d+)\s/);
-              if (portMatch) {
-                port = parseInt(portMatch[1], 10);
-              }
-            } catch {
-              // No listening port
-            }
-
-            // Get a friendly name
-            let name = comm;
-            if (fullCommand.includes('vite')) name = 'Vite Dev Server';
-            else if (fullCommand.includes('next')) name = 'Next.js';
-            else if (fullCommand.includes('webpack')) name = 'Webpack';
-            else if (fullCommand.includes('nodemon')) name = 'Nodemon';
-            else if (fullCommand.includes('ts-node')) name = 'TypeScript';
-            else if (fullCommand.includes('python')) name = 'Python';
-            else if (fullCommand.includes('flask')) name = 'Flask';
-            else if (fullCommand.includes('django')) name = 'Django';
-            else if (fullCommand.includes('cargo')) name = 'Cargo';
-            else if (fullCommand.includes('go run')) name = 'Go';
-            else if (comm === 'node') name = 'Node.js';
-
-            // Check if already added (avoid duplicates)
-            if (processes.some(p => p.pid === pid)) continue;
-
-            processes.push({
-              pid,
-              command: fullCommand.slice(0, 100),
-              name,
-              cwd,
-              port,
-            });
-          } catch {
-            // Can't access this process, skip it
-          }
-        }
-      } catch {
-        // pgrep failed for this process type
+      if (!processes.some(p => p.pid === pid)) {
+        processes.push({
+          pid,
+          command: fullCommand.slice(0, 100),
+          name,
+          cwd: basePath,
+          port,
+        });
       }
     }
 
     return processes;
-  } catch (err) {
-    console.error('Error getting processes:', err);
+  } catch {
     return [];
   }
 }
 
 function startProcessWatcher() {
-  // Disabled for now - process detection is too slow and blocks the server
-  // TODO: Implement async process detection
-  console.log('Process watcher disabled (performance optimization)');
-  return;
-
-  setInterval(() => {
+  setInterval(async () => {
     if (!watchedDirectory || clients.size === 0) return;
 
-    const processes = getRunningProcesses(watchedDirectory);
+    const processes = await getRunningProcesses(watchedDirectory);
 
     // Only broadcast if changed
     const newJson = JSON.stringify(processes);
@@ -145,7 +111,7 @@ function startProcessWatcher() {
       broadcast({ type: 'processes', payload: processes });
       console.log(`📊 Processes updated: ${processes.length} found`);
     }
-  }, 3000); // Poll every 3 seconds
+  }, 3000);
 }
 
 function isDeleteCommand(command: string): { isDelete: boolean; paths: string[] } {
@@ -559,9 +525,9 @@ wss.on('connection', (ws) => {
         if (node) {
           sendToClient(ws, { type: 'filesystem', payload: node });
         }
-        // Process detection disabled for performance
-        // TODO: Implement async process detection
-        sendToClient(ws, { type: 'processes', payload: [] });
+        const processes = await getRunningProcesses(message.path);
+        cachedProcesses = processes;
+        sendToClient(ws, { type: 'processes', payload: processes });
       } else if (message.type === 'ping') {
         sendToClient(ws, { type: 'agents', payload: Array.from(agents.values()) });
       }
