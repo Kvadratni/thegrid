@@ -12,6 +12,7 @@ export type ToolName =
   | 'Read'
   | 'Write'
   | 'Edit'
+  | 'Delete'
   | 'Bash'
   | 'Glob'
   | 'Grep'
@@ -19,6 +20,7 @@ export type ToolName =
   | 'WebFetch'
   | 'WebSearch'
   | 'TodoWrite'
+  | 'NotebookEdit'
   | 'AskUserQuestion'
   | 'Unknown';
 

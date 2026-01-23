@@ -16,6 +16,15 @@ send_event() {
     local tool_name="$1"
     local file_path="$2"
     local hook_event="$3"
+    local command="$4"
+
+    # Escape the command for JSON (replace quotes and newlines)
+    local escaped_command=$(echo "$command" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | tr '\n' ' ')
+
+    local details='{}'
+    if [ -n "$command" ]; then
+        details="{\"command\": \"$escaped_command\"}"
+    fi
 
     local payload=$(cat <<EOF
 {
@@ -25,7 +34,7 @@ send_event() {
     "toolName": "$tool_name",
     "filePath": "$file_path",
     "agentType": "main",
-    "details": {}
+    "details": $details
 }
 EOF
 )
@@ -46,15 +55,21 @@ if [ -z "$file_path" ]; then
     file_path=$(echo "$input_line" | grep -oE '"path"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//')
 fi
 
+# Extract command for Bash tool
+command=""
+if [ "$tool_name" = "Bash" ]; then
+    command=$(echo "$input_line" | grep -oE '"command"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//')
+fi
+
 hook_event=$(echo "$input_line" | grep -oE '"hook_event"\s*:\s*"[^"]*"' | head -1 | sed 's/.*: *"//' | sed 's/"$//')
 if [ -z "$hook_event" ]; then
     hook_event="ToolUse"
 fi
 
-echo "[$(date)] Extracted: tool=$tool_name file=$file_path event=$hook_event" >> "$DEBUG_LOG"
+echo "[$(date)] Extracted: tool=$tool_name file=$file_path event=$hook_event cmd=$command" >> "$DEBUG_LOG"
 
 if [ -n "$tool_name" ]; then
-    send_event "$tool_name" "$file_path" "$hook_event"
+    send_event "$tool_name" "$file_path" "$hook_event" "$command"
 fi
 
 # Pass through the input unchanged

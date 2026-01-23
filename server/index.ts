@@ -127,6 +127,18 @@ app.post('/api/events', (req, res) => {
   event.timestamp = event.timestamp || new Date().toISOString();
   event.agentType = event.agentType || 'main';
 
+  // Check if Bash command is a delete operation
+  if (event.toolName === 'Bash' && event.details?.command) {
+    const command = event.details.command as string;
+    const deleteCheck = isDeleteCommand(command);
+    if (deleteCheck.isDelete) {
+      event.toolName = 'Delete';
+      if (deleteCheck.paths[0]) {
+        event.filePath = deleteCheck.paths[0];
+      }
+    }
+  }
+
   const agentKey = `${event.sessionId}-${event.agentType}`;
 
   if (event.hookEvent === 'SessionStart' || event.hookEvent === 'SubagentStart') {
@@ -163,6 +175,13 @@ app.post('/api/events', (req, res) => {
 
   broadcast({ type: 'event', payload: event });
   broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+
+  // Trigger filesystem refresh for file-modifying operations
+  if (event.toolName && ['Write', 'Edit', 'Delete', 'NotebookEdit'].includes(event.toolName)) {
+    setTimeout(() => {
+      broadcast({ type: 'filesystemChange', payload: { action: event.toolName!.toLowerCase(), path: event.filePath } });
+    }, 500);
+  }
 
   res.json({ success: true, agentCount: agents.size });
 });
