@@ -191,6 +191,21 @@ export const useAgentStore = create<AgentStore>()(
   },
 
   addEvent: (event) => {
+    // Create a unique key for deduplication
+    const eventKey = `${event.sessionId}:${event.hookEvent}:${event.toolName || ''}:${event.filePath || ''}:${event.message?.slice(0, 50) || ''}`;
+
+    // Check last few events to prevent duplicates
+    const recentEvents = get().allEvents.slice(-10);
+    const isDuplicate = recentEvents.some(e => {
+      const existingKey = `${e.sessionId}:${e.hookEvent}:${e.toolName || ''}:${e.filePath || ''}:${e.message?.slice(0, 50) || ''}`;
+      return existingKey === eventKey;
+    });
+
+    if (isDuplicate) {
+      console.log('⏭️ Skipping duplicate event:', eventKey.slice(0, 80));
+      return;
+    }
+
     console.log('📡 Event received:', event);
 
     const eventLogs = get().eventLogs;

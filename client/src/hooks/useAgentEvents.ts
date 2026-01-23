@@ -22,7 +22,11 @@ export function useAgentEvents() {
   currentPathRef.current = currentPath;
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    // Check for both OPEN and CONNECTING states to prevent duplicate connections
+    if (wsRef.current?.readyState === WebSocket.OPEN ||
+        wsRef.current?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
 
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
@@ -35,6 +39,9 @@ export function useAgentEvents() {
     };
 
     ws.onmessage = (event) => {
+      // Ignore messages from stale connections
+      if (ws !== wsRef.current) return;
+
       try {
         const message = JSON.parse(event.data) as ServerMessage;
 
@@ -66,12 +73,16 @@ export function useAgentEvents() {
     ws.onclose = () => {
       console.log('🔷 Disconnected from The Grid');
       setConnected(false);
-      wsRef.current = null;
 
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        console.log('🔷 Attempting to reconnect...');
-        connect();
-      }, RECONNECT_DELAY);
+      // Only clear ref and reconnect if this is still the current connection
+      if (ws === wsRef.current) {
+        wsRef.current = null;
+
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          console.log('🔷 Attempting to reconnect...');
+          connect();
+        }, RECONNECT_DELAY);
+      }
     };
 
     ws.onerror = (error) => {
@@ -92,7 +103,10 @@ export function useAgentEvents() {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      wsRef.current?.close();
+      // Clear the ref first to prevent onclose from triggering reconnect
+      const ws = wsRef.current;
+      wsRef.current = null;
+      ws?.close();
     };
   }, [connect]);
 
