@@ -76,9 +76,7 @@ export default function AgentActivity({ position, color, isActive, toolName }: A
     groupRef.current.scale.setScalar(pulse);
   });
 
-  if (!isActive) return null;
-
-  // Tool-specific colors
+  // Tool-specific colors - must be before conditional return
   const activityColor = useMemo(() => {
     switch (toolName) {
       case 'Write': return '#00FF00';
@@ -90,6 +88,8 @@ export default function AgentActivity({ position, color, isActive, toolName }: A
       default: return color;
     }
   }, [toolName, color]);
+
+  if (!isActive) return null;
 
   return (
     <group ref={groupRef} position={position}>

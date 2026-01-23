@@ -3,7 +3,7 @@ import { Text, Billboard } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useAgentStore, FileSystemNode } from '../stores/agentStore';
-import { calculateLayout, LayoutNode, getPositionForPath } from '../utils/fileSystemLayout';
+import { calculateLayout, LayoutNode } from '../utils/fileSystemLayout';
 import FileEffect from './effects/FileEffect';
 
 interface FileSystemProps {
@@ -492,11 +492,53 @@ export default function FileSystem({ node, position }: FileSystemProps) {
   }, [layout]);
 
   const effectPositions = useMemo(() => {
+    // Find position and height for each effect
+    // Handles both full paths and relative paths
+    function pathMatches(nodePath: string, effectPath: string): boolean {
+      if (nodePath === effectPath) return true;
+      // Check if effectPath is a suffix of nodePath (relative path match)
+      if (nodePath.endsWith('/' + effectPath)) return true;
+      if (nodePath.endsWith(effectPath)) return true;
+      // Check if nodePath ends with just the filename
+      const effectFileName = effectPath.split('/').pop();
+      const nodeFileName = nodePath.split('/').pop();
+      if (effectFileName && effectFileName === nodeFileName) {
+        // Extra check: verify path segments match
+        const effectParts = effectPath.split('/');
+        const nodeParts = nodePath.split('/');
+        if (effectParts.length <= nodeParts.length) {
+          const nodeEnd = nodeParts.slice(-effectParts.length);
+          return effectParts.every((p, i) => p === nodeEnd[i]);
+        }
+      }
+      return false;
+    }
+
+    function findNodeInfo(path: string, layoutNode: LayoutNode, parentX: number, parentZ: number): { x: number; z: number; height: number } | null {
+      const absoluteX = parentX + layoutNode.x;
+      const absoluteZ = parentZ + layoutNode.z;
+
+      if (pathMatches(layoutNode.node.path, path)) {
+        const isDir = layoutNode.node.type === 'directory';
+        const height = isDir ? 0.3 : Math.max(1, Math.min(6, (layoutNode.node.size || 1000) / 3000));
+        return { x: absoluteX, z: absoluteZ, height };
+      }
+
+      if (layoutNode.children) {
+        for (const child of layoutNode.children) {
+          const result = findNodeInfo(path, child, absoluteX, absoluteZ);
+          if (result) return result;
+        }
+      }
+
+      return null;
+    }
+
     return fileEffects.map(effect => {
-      const pos = getPositionForPath(effect.path, node);
-      return { effect, pos };
-    }).filter(item => item.pos !== null);
-  }, [fileEffects, node]);
+      const info = findNodeInfo(effect.path, layout, 0, 0);
+      return { effect, info };
+    }).filter(item => item.info !== null);
+  }, [fileEffects, layout]);
 
   return (
     <CameraPositionProvider>
@@ -511,11 +553,11 @@ export default function FileSystem({ node, position }: FileSystemProps) {
         <RoadNode x={0} z={0} color="#AADDFF" />
         <Building layout={layout} isRoot />
 
-        {effectPositions.map(({ effect, pos }) => (
+        {effectPositions.map(({ effect, info }) => (
           <FileEffect
             key={`${effect.path}-${effect.timestamp}`}
             effect={effect}
-            position={[pos!.x, 0, pos!.z]}
+            position={[info!.x, info!.height, info!.z]}
           />
         ))}
       </group>

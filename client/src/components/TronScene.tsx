@@ -14,10 +14,41 @@ export default function TronScene() {
   // Only show agents that are working within the current directory
   const visibleAgents = useMemo(() => {
     if (!currentPath) return agents;
+
+    const currentDirName = currentPath.split('/').pop() || '';
+    const currentPathParts = currentPath.split('/').filter(Boolean);
+
     return agents.filter((agent) => {
       if (!agent.currentPath) return false;
-      // Agent is visible if their working path is within the current directory
-      return agent.currentPath.startsWith(currentPath);
+
+      const agentPath = agent.currentPath;
+
+      // Case 1: Exact prefix match (both absolute paths)
+      // e.g., agentPath "/Users/mnovich/Development/thegrid/client/file.tsx"
+      if (agentPath.startsWith(currentPath + '/') || agentPath === currentPath) {
+        return true;
+      }
+
+      // Case 2: Agent path starts with a recognizable suffix of currentPath
+      // e.g., currentPath "/Users/mnovich/Development/thegrid"
+      //       agentPath "thegrid/client/file.tsx" or "Development/thegrid/client/file.tsx"
+      // Only check the last few meaningful segments to avoid false positives
+      const meaningfulDepth = Math.min(3, currentPathParts.length);
+      for (let i = currentPathParts.length - meaningfulDepth; i < currentPathParts.length; i++) {
+        const suffix = currentPathParts.slice(i).join('/');
+        // Require exact segment match (suffix followed by / or exact match)
+        if (agentPath === suffix || agentPath.startsWith(suffix + '/')) {
+          return true;
+        }
+      }
+
+      // Case 3: Agent path starts with the current directory name followed by /
+      // e.g., currentPath ends with "thegrid", agentPath is "thegrid/client/file.tsx"
+      if (currentDirName && agentPath.startsWith(currentDirName + '/')) {
+        return true;
+      }
+
+      return false;
     });
   }, [agents, currentPath]);
 

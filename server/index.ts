@@ -20,6 +20,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 const agents = new Map<string, AgentState>();
 const clients = new Set<WebSocket>();
 const spawnedProcesses = new Map<string, ChildProcess>();
+const seenToolUseIds = new Map<string, Set<string>>();
 
 const AGENT_COLORS = {
   main: '#00FFFF',
@@ -157,7 +158,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.post('/api/agents/spawn', (req, res) => {
-  const { workingDirectory, prompt } = req.body as { workingDirectory: string; prompt: string };
+  const { workingDirectory, prompt, dangerousMode } = req.body as { workingDirectory: string; prompt: string; dangerousMode?: boolean };
 
   if (!workingDirectory || !prompt) {
     res.status(400).json({ error: 'workingDirectory and prompt are required' });
@@ -170,15 +171,21 @@ app.post('/api/agents/spawn', (req, res) => {
     const args = [
       '-p', prompt,
       '--output-format', 'stream-json',
-      '--verbose',
     ];
-    console.log(`[${sessionId}] Spawning: claude ${args.join(' ')}`);
+
+    if (dangerousMode) {
+      args.push('--dangerously-skip-permissions');
+    }
+
+    console.log(`[${sessionId}] Spawning: claude ${args.join(' ')}${dangerousMode ? ' (DANGEROUS MODE)' : ' (SAFE MODE - writes will fail)'}`);
 
     const claudeProcess = spawn('claude', args, {
       cwd: workingDirectory,
       env: { ...process.env, CLAUDE_SESSION_ID: sessionId },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+
+    seenToolUseIds.set(sessionId, new Set());
 
     spawnedProcesses.set(sessionId, claudeProcess);
 
@@ -205,8 +212,18 @@ app.post('/api/agents/spawn', (req, res) => {
 
           // Handle assistant messages
           if (parsed.type === 'assistant' && parsed.message?.content) {
+            const seenIds = seenToolUseIds.get(sessionId) || new Set();
+
             for (const block of parsed.message.content) {
               if (block.type === 'tool_use') {
+                // Deduplicate by tool_use id
+                if (block.id && seenIds.has(block.id)) {
+                  continue;
+                }
+                if (block.id) {
+                  seenIds.add(block.id);
+                }
+
                 const filePath = block.input?.file_path || block.input?.path || workingDirectory;
                 const event: AgentEvent = {
                   timestamp: new Date().toISOString(),
@@ -216,7 +233,7 @@ app.post('/api/agents/spawn', (req, res) => {
                   filePath,
                   agentType: 'main',
                 };
-                console.log(`[${sessionId}] Broadcasting tool event:`, event.toolName);
+                console.log(`[${sessionId}] Broadcasting tool event:`, event.toolName, block.id);
                 broadcast({ type: 'event', payload: event });
 
                 const agent = agents.get(`${sessionId}-main`);
@@ -226,6 +243,13 @@ app.post('/api/agents/spawn', (req, res) => {
                 }
                 broadcast({ type: 'agents', payload: Array.from(agents.values()) });
               } else if (block.type === 'text' && block.text) {
+                // Deduplicate text messages by content hash
+                const textHash = `text:${block.text.slice(0, 100)}`;
+                if (seenIds.has(textHash)) {
+                  continue;
+                }
+                seenIds.add(textHash);
+
                 const event: AgentEvent = {
                   timestamp: new Date().toISOString(),
                   sessionId,
@@ -240,20 +264,25 @@ app.post('/api/agents/spawn', (req, res) => {
 
           // Handle final result
           if (parsed.type === 'result') {
-            const event: AgentEvent = {
-              timestamp: new Date().toISOString(),
-              sessionId,
-              hookEvent: 'Result',
-              agentType: 'main',
-              message: parsed.result,
-              details: {
-                success: !parsed.is_error,
-                duration_ms: parsed.duration_ms,
-                num_turns: parsed.num_turns,
-                cost_usd: parsed.total_cost_usd,
-              },
-            };
-            broadcast({ type: 'event', payload: event });
+            const seenIds = seenToolUseIds.get(sessionId) || new Set();
+            const resultKey = `result:${parsed.result?.slice(0, 50)}`;
+            if (!seenIds.has(resultKey)) {
+              seenIds.add(resultKey);
+              const event: AgentEvent = {
+                timestamp: new Date().toISOString(),
+                sessionId,
+                hookEvent: 'Result',
+                agentType: 'main',
+                message: parsed.result,
+                details: {
+                  success: !parsed.is_error,
+                  duration_ms: parsed.duration_ms,
+                  num_turns: parsed.num_turns,
+                  cost_usd: parsed.total_cost_usd,
+                },
+              };
+              broadcast({ type: 'event', payload: event });
+            }
           }
         } catch {
           // Not JSON, ignore
@@ -267,6 +296,7 @@ app.post('/api/agents/spawn', (req, res) => {
 
     claudeProcess.on('close', (code, signal) => {
       spawnedProcesses.delete(sessionId);
+      seenToolUseIds.delete(sessionId);
       const agent = agents.get(`${sessionId}-main`);
       if (agent) {
         agent.status = code === 0 ? 'completed' : 'error';

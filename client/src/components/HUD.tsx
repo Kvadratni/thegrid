@@ -450,6 +450,8 @@ export default function HUD() {
   const clearSearch = useAgentStore((state) => state.clearSearch);
   const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
   const allEventsCount = useAgentStore((state) => state.allEvents.length);
+  const dangerousMode = useAgentStore((state) => state.dangerousMode);
+  const setDangerousMode = useAgentStore((state) => state.setDangerousMode);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -474,6 +476,7 @@ export default function HUD() {
         body: JSON.stringify({
           workingDirectory: currentPath,
           prompt: prompt.trim(),
+          dangerousMode,
         }),
       });
 
@@ -629,6 +632,66 @@ export default function HUD() {
               <div style={{ fontSize: '10px', color: '#666', marginTop: '4px', textAlign: 'center' }}>
                 ⌘+Enter to launch
               </div>
+            </div>
+
+            {/* Dangerous Mode Toggle */}
+            <div
+              onClick={() => setDangerousMode(!dangerousMode)}
+              style={{
+                marginBottom: '12px',
+                padding: '10px',
+                background: dangerousMode ? 'rgba(255, 0, 102, 0.15)' : 'rgba(0, 255, 255, 0.05)',
+                border: `1px solid ${dangerousMode ? '#FF0066' : '#00FFFF'}`,
+                borderRadius: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '14px' }}>{dangerousMode ? '⚠️' : '🔒'}</span>
+                  <span style={{
+                    color: dangerousMode ? '#FF0066' : '#00FFFF',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    letterSpacing: '1px',
+                  }}>
+                    {dangerousMode ? 'DANGEROUS MODE' : 'SAFE MODE'}
+                  </span>
+                </div>
+                <div style={{
+                  width: '36px',
+                  height: '18px',
+                  background: dangerousMode ? '#FF0066' : '#333',
+                  borderRadius: '9px',
+                  position: 'relative',
+                  transition: 'background 0.2s',
+                }}>
+                  <div style={{
+                    width: '14px',
+                    height: '14px',
+                    background: '#FFF',
+                    borderRadius: '50%',
+                    position: 'absolute',
+                    top: '2px',
+                    left: dangerousMode ? '20px' : '2px',
+                    transition: 'left 0.2s',
+                  }} />
+                </div>
+              </div>
+              {dangerousMode && (
+                <div style={{
+                  fontSize: '9px',
+                  color: '#FF6666',
+                  marginTop: '6px',
+                }}>
+                  Agent will bypass all permission prompts
+                </div>
+              )}
             </div>
 
             <button

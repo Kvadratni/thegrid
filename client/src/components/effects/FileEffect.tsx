@@ -35,14 +35,15 @@ export default function FileEffect({ effect, position }: FileEffectProps) {
 
     const elapsed = (Date.now() - startTime.current) / 1000;
     const progress = Math.min(elapsed / 2, 1);
+    const baseY = position[1]; // File's top height
 
     switch (effect.type) {
       case 'create': {
-        // Beam rising effect
+        // Beam rising from file
         const scale = Math.min(progress * 1.5, 1);
         const rise = Math.min(elapsed * 2, 3);
         groupRef.current.scale.set(scale, scale, scale);
-        groupRef.current.position.y = position[1] + rise * 0.3;
+        groupRef.current.position.y = baseY + 0.5 + rise * 0.5;
 
         // Rotate particles
         if (particlesRef.current) {
@@ -56,20 +57,21 @@ export default function FileEffect({ effect, position }: FileEffectProps) {
         break;
       }
       case 'edit': {
-        // Pulsing rings
+        // Pulsing rings around file
         const pulse = 1 + Math.sin(elapsed * 8) * 0.2;
         groupRef.current.scale.setScalar(pulse);
         groupRef.current.rotation.y += 0.02;
-        groupRef.current.position.y = position[1] + 0.5 + Math.sin(elapsed * 4) * 0.2;
+        groupRef.current.position.y = baseY * 0.5 + Math.sin(elapsed * 4) * 0.2;
         break;
       }
       case 'read': {
-        // Scanning beam
+        // Scanning beam moving up through file
+        const fileHeight = baseY || 1;
         const scan = (elapsed * 1.5) % 1;
-        groupRef.current.position.y = position[1] + scan * 4;
+        groupRef.current.position.y = scan * (fileHeight + 2);
         groupRef.current.rotation.y += 0.05;
-        const opacity = 0.8 - scan * 0.6;
-        groupRef.current.scale.set(1 + scan * 0.5, 0.1, 1 + scan * 0.5);
+        const opacity = 0.8 - scan * 0.4;
+        groupRef.current.scale.set(1 + scan * 0.3, 0.1, 1 + scan * 0.3);
         if (groupRef.current.children[0]) {
           const mesh = groupRef.current.children[0] as THREE.Mesh;
           if (mesh.material instanceof THREE.MeshBasicMaterial) {
@@ -79,12 +81,12 @@ export default function FileEffect({ effect, position }: FileEffectProps) {
         break;
       }
       case 'delete': {
-        // Fragmenting/dissolving effect
+        // Fragmenting/dissolving at file position
         const dissolve = 1 - progress;
         groupRef.current.scale.setScalar(dissolve * 1.5);
         groupRef.current.rotation.y += 0.15;
         groupRef.current.rotation.x += 0.1;
-        groupRef.current.position.y = position[1] + (1 - dissolve) * 2;
+        groupRef.current.position.y = baseY * 0.5 + (1 - dissolve) * 2;
         break;
       }
     }

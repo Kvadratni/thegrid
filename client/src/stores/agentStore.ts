@@ -56,6 +56,7 @@ interface AgentStore {
   highlightedPath: string | null;
   filesystemDirty: number;
   teleportCounter: number;
+  dangerousMode: boolean;
 
   setAgents: (agents: AgentState[]) => void;
   setFileSystem: (fs: FileSystemNode) => void;
@@ -73,6 +74,7 @@ interface AgentStore {
   clearSearch: () => void;
   setHighlightedPath: (path: string | null) => void;
   teleportToOrigin: () => void;
+  setDangerousMode: (enabled: boolean) => void;
 }
 
 function searchFileSystem(node: FileSystemNode, query: string, results: string[] = []): string[] {
@@ -103,8 +105,29 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   highlightedPath: null,
   filesystemDirty: 0,
   teleportCounter: 0,
+  dangerousMode: false,
 
-  setAgents: (agents) => set({ agents }),
+  setAgents: (agents) => {
+    // Auto-remove completed/error agents after 30 seconds
+    const COMPLETED_AGENT_TIMEOUT = 30000;
+
+    agents.forEach(agent => {
+      if (agent.status === 'completed' || agent.status === 'error') {
+        setTimeout(() => {
+          const currentAgents = get().agents;
+          const stillExists = currentAgents.find(a =>
+            a.sessionId === agent.sessionId &&
+            (a.status === 'completed' || a.status === 'error')
+          );
+          if (stillExists) {
+            get().removeAgent(agent.sessionId);
+          }
+        }, COMPLETED_AGENT_TIMEOUT);
+      }
+    });
+
+    set({ agents });
+  },
 
   setFileSystem: (fs) => set({ fileSystem: fs }),
 
@@ -221,4 +244,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   clearSearch: () => set({ searchQuery: '', searchResults: [], highlightedPath: null }),
 
   setHighlightedPath: (path) => set({ highlightedPath: path }),
+
+  setDangerousMode: (enabled) => set({ dangerousMode: enabled }),
 }));
