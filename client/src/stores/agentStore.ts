@@ -52,6 +52,14 @@ export interface FileSystemNode {
   extension?: string;
 }
 
+export interface ProcessInfo {
+  pid: number;
+  command: string;
+  name: string;
+  cwd: string;
+  port?: number;
+}
+
 interface AgentStore {
   agents: AgentState[];
   fileSystem: FileSystemNode | null;
@@ -62,6 +70,7 @@ interface AgentStore {
   allEvents: AgentEvent[];
   fileEffects: FileEffect[];
   fileAnimations: FileAnimation[];
+  processes: ProcessInfo[];
   selectedAgentId: string | null;
   searchQuery: string;
   searchResults: string[];
@@ -89,6 +98,7 @@ interface AgentStore {
   setDangerousMode: (enabled: boolean) => void;
   addFileAnimation: (animation: FileAnimation) => void;
   removeFileAnimation: (path: string) => void;
+  setProcesses: (processes: ProcessInfo[]) => void;
 }
 
 function searchFileSystem(node: FileSystemNode, query: string, results: string[] = []): string[] {
@@ -116,6 +126,7 @@ export const useAgentStore = create<AgentStore>()(
   allEvents: [],
   fileEffects: [],
   fileAnimations: [],
+  processes: [],
   selectedAgentId: null,
   searchQuery: '',
   searchResults: [],
@@ -305,6 +316,8 @@ export const useAgentStore = create<AgentStore>()(
   removeFileAnimation: (path) => {
     set({ fileAnimations: get().fileAnimations.filter(a => a.path !== path) });
   },
+
+  setProcesses: (processes) => set({ processes }),
 }),
     {
       name: STORAGE_KEY,

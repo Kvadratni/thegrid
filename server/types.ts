@@ -57,9 +57,17 @@ export interface FileSystemNode {
   extension?: string;
 }
 
+export interface ProcessInfo {
+  pid: number;
+  command: string;
+  name: string;
+  cwd: string;
+  port?: number;
+}
+
 export interface ServerMessage {
-  type: 'event' | 'agents' | 'filesystem' | 'error' | 'filesystemChange';
-  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string } | { action: string; path?: string };
+  type: 'event' | 'agents' | 'filesystem' | 'error' | 'filesystemChange' | 'processes';
+  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string } | { action: string; path?: string } | ProcessInfo[];
 }
 
 export interface ClientMessage {

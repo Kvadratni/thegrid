@@ -2,11 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execSync } from 'child_process';
 import { readdir, stat } from 'fs/promises';
 import { join, extname, basename } from 'path';
 import { randomUUID } from 'crypto';
-import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage } from './types.js';
+import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo } from './types.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +26,128 @@ const AGENT_COLORS = {
   main: '#00FFFF',
   subagent: '#FF6600',
 };
+
+let watchedDirectory = '';
+let cachedProcesses: ProcessInfo[] = [];
+
+function getRunningProcesses(basePath: string): ProcessInfo[] {
+  try {
+    // Use lsof to find processes with files open in the directory, and ps for process info
+    // This approach finds processes whose cwd is within basePath
+    const psOutput = execSync(
+      `ps -eo pid,comm,command | grep -v grep`,
+      { encoding: 'utf-8', timeout: 5000 }
+    );
+
+    const processes: ProcessInfo[] = [];
+    const seen = new Set<number>();
+
+    const lines = psOutput.trim().split('\n');
+    for (const line of lines) {
+      const match = line.trim().match(/^(\d+)\s+(\S+)\s+(.*)$/);
+      if (!match) continue;
+
+      const pid = parseInt(match[1], 10);
+      if (seen.has(pid)) continue;
+
+      const comm = match[2];
+      const fullCommand = match[3];
+
+      // Skip system processes and our own server
+      if (pid === process.pid) continue;
+      if (comm.startsWith('(') || comm === 'ps' || comm === 'grep') continue;
+
+      // Try to get the working directory of the process
+      try {
+        const cwdLink = execSync(`lsof -p ${pid} -Fn 2>/dev/null | grep '^n.*cwd' | head -1 | cut -c2-`, {
+          encoding: 'utf-8',
+          timeout: 1000,
+        }).trim();
+
+        // Also try pwdx-style approach for the cwd
+        let cwd = cwdLink;
+        if (!cwd) {
+          try {
+            // On macOS, try using procfs alternative
+            const lsofCwd = execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null | grep '^n' | cut -c2-`, {
+              encoding: 'utf-8',
+              timeout: 1000,
+            }).trim();
+            cwd = lsofCwd;
+          } catch {
+            // Ignore
+          }
+        }
+
+        if (cwd && cwd.startsWith(basePath)) {
+          seen.add(pid);
+
+          // Try to detect the port if it's a server
+          let port: number | undefined;
+          try {
+            const portOutput = execSync(`lsof -i -P -n -p ${pid} 2>/dev/null | grep LISTEN | head -1`, {
+              encoding: 'utf-8',
+              timeout: 1000,
+            }).trim();
+            const portMatch = portOutput.match(/:(\d+)\s+\(LISTEN\)/);
+            if (portMatch) {
+              port = parseInt(portMatch[1], 10);
+            }
+          } catch {
+            // No listening port
+          }
+
+          // Get a friendly name
+          let name = comm;
+          if (fullCommand.includes('vite')) name = 'Vite Dev Server';
+          else if (fullCommand.includes('next')) name = 'Next.js';
+          else if (fullCommand.includes('webpack')) name = 'Webpack';
+          else if (fullCommand.includes('nodemon')) name = 'Nodemon';
+          else if (fullCommand.includes('ts-node')) name = 'TypeScript';
+          else if (fullCommand.includes('python')) name = 'Python';
+          else if (fullCommand.includes('flask')) name = 'Flask';
+          else if (fullCommand.includes('django')) name = 'Django';
+          else if (fullCommand.includes('cargo')) name = 'Cargo';
+          else if (fullCommand.includes('go run')) name = 'Go';
+          else if (comm === 'node') name = 'Node.js';
+
+          processes.push({
+            pid,
+            command: fullCommand.slice(0, 100),
+            name,
+            cwd,
+            port,
+          });
+        }
+      } catch {
+        // Can't access process cwd, skip it
+      }
+    }
+
+    return processes;
+  } catch (err) {
+    console.error('Error getting processes:', err);
+    return [];
+  }
+}
+
+function startProcessWatcher() {
+  setInterval(() => {
+    if (!watchedDirectory || clients.size === 0) return;
+
+    const processes = getRunningProcesses(watchedDirectory);
+
+    // Only broadcast if changed
+    const newJson = JSON.stringify(processes);
+    const oldJson = JSON.stringify(cachedProcesses);
+
+    if (newJson !== oldJson) {
+      cachedProcesses = processes;
+      broadcast({ type: 'processes', payload: processes });
+      console.log(`📊 Processes updated: ${processes.length} found`);
+    }
+  }, 3000); // Poll every 3 seconds
+}
 
 function isDeleteCommand(command: string): { isDelete: boolean; paths: string[] } {
   const deletePatterns = [
@@ -433,10 +555,15 @@ wss.on('connection', (ws) => {
       const message = JSON.parse(data.toString()) as ClientMessage;
 
       if (message.type === 'getFilesystem' && message.path) {
+        watchedDirectory = message.path;
         const node = await scanDirectory(message.path);
         if (node) {
           sendToClient(ws, { type: 'filesystem', payload: node });
         }
+        // Send current processes for this directory
+        const processes = getRunningProcesses(message.path);
+        cachedProcesses = processes;
+        sendToClient(ws, { type: 'processes', payload: processes });
       } else if (message.type === 'ping') {
         sendToClient(ws, { type: 'agents', payload: Array.from(agents.values()) });
       }
@@ -455,4 +582,8 @@ server.listen(PORT, () => {
   console.log(`🔷 The Grid Bridge Server running on port ${PORT}`);
   console.log(`   HTTP: http://localhost:${PORT}`);
   console.log(`   WebSocket: ws://localhost:${PORT}/ws`);
+
+  // Start watching for processes
+  startProcessWatcher();
+  console.log(`   Process watcher started`);
 });

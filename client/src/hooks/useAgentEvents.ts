@@ -1,9 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { useAgentStore, AgentEvent, AgentState, FileSystemNode } from '../stores/agentStore';
+import { useAgentStore, AgentEvent, AgentState, FileSystemNode, ProcessInfo } from '../stores/agentStore';
 
 interface ServerMessage {
-  type: 'event' | 'agents' | 'filesystem' | 'error' | 'filesystemChange';
-  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string } | { action: string; path?: string };
+  type: 'event' | 'agents' | 'filesystem' | 'error' | 'filesystemChange' | 'processes';
+  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string } | { action: string; path?: string } | ProcessInfo[];
 }
 
 const WS_URL = `ws://${window.location.hostname}:3001/ws`;
@@ -16,7 +16,7 @@ export function useAgentEvents() {
   const filesystemRefreshTimeoutRef = useRef<number | null>(null);
   const currentPathRef = useRef<string>('');
 
-  const { setAgents, setFileSystem, addEvent, setConnected, currentPath, filesystemDirty } = useAgentStore();
+  const { setAgents, setFileSystem, addEvent, setConnected, setProcesses, currentPath, filesystemDirty } = useAgentStore();
 
   // Keep ref in sync with state
   currentPathRef.current = currentPath;
@@ -61,6 +61,9 @@ export function useAgentEvents() {
             requestFilesystem(currentPathRef.current);
             break;
           }
+          case 'processes':
+            setProcesses(message.payload as ProcessInfo[]);
+            break;
           case 'error':
             console.error('Server error:', (message.payload as { message: string }).message);
             break;
@@ -88,7 +91,7 @@ export function useAgentEvents() {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-  }, [setAgents, setFileSystem, addEvent, setConnected]);
+  }, [setAgents, setFileSystem, addEvent, setConnected, setProcesses]);
 
   const requestFilesystem = useCallback((path: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

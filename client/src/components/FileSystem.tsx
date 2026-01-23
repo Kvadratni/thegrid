@@ -2,11 +2,12 @@ import { useMemo, useState, createContext, useContext, useRef } from 'react';
 import { Text, Billboard } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useAgentStore, FileSystemNode } from '../stores/agentStore';
+import { useAgentStore, FileSystemNode, ProcessInfo } from '../stores/agentStore';
 import { calculateLayout, LayoutNode } from '../utils/fileSystemLayout';
 import FileEffect from './effects/FileEffect';
 import FileCrumble from './effects/FileCrumble';
 import FileRise from './effects/FileRise';
+import ProcessIndicator from './effects/ProcessIndicator';
 
 interface FileSystemProps {
   node: FileSystemNode;
@@ -441,6 +442,7 @@ export default function FileSystem({ node, position }: FileSystemProps) {
   const currentPath = useAgentStore((state) => state.currentPath);
   const fileEffects = useAgentStore((state) => state.fileEffects);
   const fileAnimations = useAgentStore((state) => state.fileAnimations);
+  const processes = useAgentStore((state) => state.processes);
   const layout = useMemo(() => calculateLayout(node), [node]);
 
   const { roads, nodes } = useMemo(() => {
@@ -548,6 +550,36 @@ export default function FileSystem({ node, position }: FileSystemProps) {
     });
   }, [fileAnimations, layout]);
 
+  // Group processes by their cwd and find positions
+  const processPositions = useMemo(() => {
+    const grouped = new Map<string, ProcessInfo[]>();
+
+    // Group processes by their working directory
+    processes.forEach(proc => {
+      const existing = grouped.get(proc.cwd) || [];
+      existing.push(proc);
+      grouped.set(proc.cwd, existing);
+    });
+
+    // Find positions for each group
+    const result: { process: ProcessInfo; position: { x: number; z: number }; index: number }[] = [];
+
+    grouped.forEach((procs, cwd) => {
+      const info = findNodeInfo(cwd, layout, 0, 0);
+      if (info) {
+        procs.forEach((proc, index) => {
+          result.push({
+            process: proc,
+            position: { x: info.x, z: info.z },
+            index,
+          });
+        });
+      }
+    });
+
+    return result;
+  }, [processes, layout]);
+
   return (
     <CameraPositionProvider>
       <group position={position}>
@@ -588,6 +620,15 @@ export default function FileSystem({ node, position }: FileSystemProps) {
               fileName={animation.path.split('/').pop()}
             />
           )
+        ))}
+
+        {processPositions.map(({ process, position, index }) => (
+          <ProcessIndicator
+            key={`process-${process.pid}`}
+            process={process}
+            position={[position.x, 0, position.z]}
+            index={index}
+          />
         ))}
       </group>
     </CameraPositionProvider>
