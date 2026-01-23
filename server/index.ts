@@ -32,95 +32,89 @@ let cachedProcesses: ProcessInfo[] = [];
 
 function getRunningProcesses(basePath: string): ProcessInfo[] {
   try {
-    // Use lsof to find processes with files open in the directory, and ps for process info
-    // This approach finds processes whose cwd is within basePath
-    const psOutput = execSync(
-      `ps -eo pid,comm,command | grep -v grep`,
-      { encoding: 'utf-8', timeout: 5000 }
-    );
-
     const processes: ProcessInfo[] = [];
-    const seen = new Set<number>();
 
-    const lines = psOutput.trim().split('\n');
-    for (const line of lines) {
-      const match = line.trim().match(/^(\d+)\s+(\S+)\s+(.*)$/);
-      if (!match) continue;
+    // Get all node, python, ruby, go processes
+    const interestingProcesses = ['node', 'python', 'python3', 'ruby', 'go', 'java', 'cargo'];
 
-      const pid = parseInt(match[1], 10);
-      if (seen.has(pid)) continue;
-
-      const comm = match[2];
-      const fullCommand = match[3];
-
-      // Skip system processes and our own server
-      if (pid === process.pid) continue;
-      if (comm.startsWith('(') || comm === 'ps' || comm === 'grep') continue;
-
-      // Try to get the working directory of the process
+    for (const procName of interestingProcesses) {
       try {
-        const cwdLink = execSync(`lsof -p ${pid} -Fn 2>/dev/null | grep '^n.*cwd' | head -1 | cut -c2-`, {
+        const pgrep = execSync(`pgrep -f ${procName} 2>/dev/null || true`, {
           encoding: 'utf-8',
-          timeout: 1000,
+          timeout: 2000,
         }).trim();
 
-        // Also try pwdx-style approach for the cwd
-        let cwd = cwdLink;
-        if (!cwd) {
+        if (!pgrep) continue;
+
+        const pids = pgrep.split('\n').filter(Boolean);
+
+        for (const pidStr of pids) {
+          const pid = parseInt(pidStr, 10);
+          if (isNaN(pid) || pid === process.pid) continue;
+
           try {
-            // On macOS, try using procfs alternative
-            const lsofCwd = execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null | grep '^n' | cut -c2-`, {
+            // Get cwd using lsof
+            const cwd = execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null | grep '^n' | cut -c2-`, {
               encoding: 'utf-8',
               timeout: 1000,
             }).trim();
-            cwd = lsofCwd;
-          } catch {
-            // Ignore
-          }
-        }
 
-        if (cwd && cwd.startsWith(basePath)) {
-          seen.add(pid);
+            if (!cwd || !cwd.startsWith(basePath)) continue;
 
-          // Try to detect the port if it's a server
-          let port: number | undefined;
-          try {
-            const portOutput = execSync(`lsof -i -P -n -p ${pid} 2>/dev/null | grep LISTEN | head -1`, {
+            // Get command
+            const psOutput = execSync(`ps -p ${pid} -o comm=,args= 2>/dev/null`, {
               encoding: 'utf-8',
               timeout: 1000,
             }).trim();
-            const portMatch = portOutput.match(/:(\d+)\s+\(LISTEN\)/);
-            if (portMatch) {
-              port = parseInt(portMatch[1], 10);
+
+            const comm = psOutput.split(' ')[0] || procName;
+            const fullCommand = psOutput;
+
+            // Try to detect the port
+            let port: number | undefined;
+            try {
+              const portOutput = execSync(`lsof -iTCP -sTCP:LISTEN -P -n -p ${pid} 2>/dev/null | tail -1`, {
+                encoding: 'utf-8',
+                timeout: 1000,
+              }).trim();
+              const portMatch = portOutput.match(/:(\d+)\s/);
+              if (portMatch) {
+                port = parseInt(portMatch[1], 10);
+              }
+            } catch {
+              // No listening port
             }
+
+            // Get a friendly name
+            let name = comm;
+            if (fullCommand.includes('vite')) name = 'Vite Dev Server';
+            else if (fullCommand.includes('next')) name = 'Next.js';
+            else if (fullCommand.includes('webpack')) name = 'Webpack';
+            else if (fullCommand.includes('nodemon')) name = 'Nodemon';
+            else if (fullCommand.includes('ts-node')) name = 'TypeScript';
+            else if (fullCommand.includes('python')) name = 'Python';
+            else if (fullCommand.includes('flask')) name = 'Flask';
+            else if (fullCommand.includes('django')) name = 'Django';
+            else if (fullCommand.includes('cargo')) name = 'Cargo';
+            else if (fullCommand.includes('go run')) name = 'Go';
+            else if (comm === 'node') name = 'Node.js';
+
+            // Check if already added (avoid duplicates)
+            if (processes.some(p => p.pid === pid)) continue;
+
+            processes.push({
+              pid,
+              command: fullCommand.slice(0, 100),
+              name,
+              cwd,
+              port,
+            });
           } catch {
-            // No listening port
+            // Can't access this process, skip it
           }
-
-          // Get a friendly name
-          let name = comm;
-          if (fullCommand.includes('vite')) name = 'Vite Dev Server';
-          else if (fullCommand.includes('next')) name = 'Next.js';
-          else if (fullCommand.includes('webpack')) name = 'Webpack';
-          else if (fullCommand.includes('nodemon')) name = 'Nodemon';
-          else if (fullCommand.includes('ts-node')) name = 'TypeScript';
-          else if (fullCommand.includes('python')) name = 'Python';
-          else if (fullCommand.includes('flask')) name = 'Flask';
-          else if (fullCommand.includes('django')) name = 'Django';
-          else if (fullCommand.includes('cargo')) name = 'Cargo';
-          else if (fullCommand.includes('go run')) name = 'Go';
-          else if (comm === 'node') name = 'Node.js';
-
-          processes.push({
-            pid,
-            command: fullCommand.slice(0, 100),
-            name,
-            cwd,
-            port,
-          });
         }
       } catch {
-        // Can't access process cwd, skip it
+        // pgrep failed for this process type
       }
     }
 
