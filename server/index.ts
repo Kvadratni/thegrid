@@ -126,6 +126,11 @@ function getRunningProcesses(basePath: string): ProcessInfo[] {
 }
 
 function startProcessWatcher() {
+  // Disabled for now - process detection is too slow and blocks the server
+  // TODO: Implement async process detection
+  console.log('Process watcher disabled (performance optimization)');
+  return;
+
   setInterval(() => {
     if (!watchedDirectory || clients.size === 0) return;
 
@@ -554,10 +559,9 @@ wss.on('connection', (ws) => {
         if (node) {
           sendToClient(ws, { type: 'filesystem', payload: node });
         }
-        // Send current processes for this directory
-        const processes = getRunningProcesses(message.path);
-        cachedProcesses = processes;
-        sendToClient(ws, { type: 'processes', payload: processes });
+        // Process detection disabled for performance
+        // TODO: Implement async process detection
+        sendToClient(ws, { type: 'processes', payload: [] });
       } else if (message.type === 'ping') {
         sendToClient(ws, { type: 'agents', payload: Array.from(agents.values()) });
       }
