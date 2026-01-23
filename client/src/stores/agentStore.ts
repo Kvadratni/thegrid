@@ -1,4 +1,8 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+const STORAGE_KEY = 'thegrid-settings';
+const MAX_PERSISTED_EVENTS = 500;
 
 export type AgentType = 'main' | 'subagent';
 export type AgentStatus = 'running' | 'completed' | 'error';
@@ -32,6 +36,13 @@ export interface FileEffect {
   color: string;
 }
 
+export interface FileAnimation {
+  path: string;
+  type: 'create' | 'delete';
+  startTime: number;
+  position?: { x: number; z: number; height: number };
+}
+
 export interface FileSystemNode {
   name: string;
   path: string;
@@ -50,6 +61,7 @@ interface AgentStore {
   eventLogs: Map<string, AgentEvent[]>;
   allEvents: AgentEvent[];
   fileEffects: FileEffect[];
+  fileAnimations: FileAnimation[];
   selectedAgentId: string | null;
   searchQuery: string;
   searchResults: string[];
@@ -75,6 +87,8 @@ interface AgentStore {
   setHighlightedPath: (path: string | null) => void;
   teleportToOrigin: () => void;
   setDangerousMode: (enabled: boolean) => void;
+  addFileAnimation: (animation: FileAnimation) => void;
+  removeFileAnimation: (path: string) => void;
 }
 
 function searchFileSystem(node: FileSystemNode, query: string, results: string[] = []): string[] {
@@ -90,7 +104,9 @@ function searchFileSystem(node: FileSystemNode, query: string, results: string[]
   return results;
 }
 
-export const useAgentStore = create<AgentStore>((set, get) => ({
+export const useAgentStore = create<AgentStore>()(
+  persist(
+    (set, get) => ({
   agents: [],
   fileSystem: null,
   currentPath: '/Users/mnovich/Development/thegrid',
@@ -99,6 +115,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   eventLogs: new Map(),
   allEvents: [],
   fileEffects: [],
+  fileAnimations: [],
   selectedAgentId: null,
   searchQuery: '',
   searchResults: [],
@@ -210,6 +227,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         case 'Read':
           effectType = 'read';
           break;
+        case 'Delete':
+          effectType = 'delete';
+          break;
       }
 
       if (effectType && event.filePath) {
@@ -220,7 +240,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           color,
         });
 
-        if (effectType === 'create' || effectType === 'edit') {
+        // Add file animation for create/delete
+        if (effectType === 'create' || effectType === 'delete') {
+          get().addFileAnimation({
+            path: event.filePath,
+            type: effectType,
+            startTime: Date.now(),
+          });
+        }
+
+        if (effectType === 'create' || effectType === 'edit' || effectType === 'delete') {
           set({ filesystemDirty: get().filesystemDirty + 1 });
         }
       }
@@ -246,4 +275,37 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setHighlightedPath: (path) => set({ highlightedPath: path }),
 
   setDangerousMode: (enabled) => set({ dangerousMode: enabled }),
-}));
+
+  addFileAnimation: (animation) => {
+    const animations = get().fileAnimations.filter(a => a.path !== animation.path);
+    animations.push(animation);
+    set({ fileAnimations: animations });
+
+    // Auto-remove after animation completes (3 seconds)
+    setTimeout(() => {
+      get().removeFileAnimation(animation.path);
+    }, 3000);
+  },
+
+  removeFileAnimation: (path) => {
+    set({ fileAnimations: get().fileAnimations.filter(a => a.path !== path) });
+  },
+}),
+    {
+      name: STORAGE_KEY,
+      partialize: (state) => ({
+        dangerousMode: state.dangerousMode,
+        currentPath: state.currentPath,
+        allEvents: state.allEvents.slice(-MAX_PERSISTED_EVENTS),
+        eventLogs: Object.fromEntries(
+          Array.from(state.eventLogs.entries()).map(([k, v]) => [k, v.slice(-100)])
+        ),
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state && state.eventLogs && !(state.eventLogs instanceof Map)) {
+          state.eventLogs = new Map(Object.entries(state.eventLogs as Record<string, AgentEvent[]>));
+        }
+      },
+    }
+  )
+);

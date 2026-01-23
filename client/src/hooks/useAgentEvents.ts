@@ -2,8 +2,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useAgentStore, AgentEvent, AgentState, FileSystemNode } from '../stores/agentStore';
 
 interface ServerMessage {
-  type: 'event' | 'agents' | 'filesystem' | 'error';
-  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string };
+  type: 'event' | 'agents' | 'filesystem' | 'error' | 'filesystemChange';
+  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string } | { action: string; path?: string };
 }
 
 const WS_URL = `ws://${window.location.hostname}:3001/ws`;
@@ -48,6 +48,12 @@ export function useAgentEvents() {
           case 'filesystem':
             setFileSystem(message.payload as FileSystemNode);
             break;
+          case 'filesystemChange': {
+            const change = message.payload as { action: string; path?: string };
+            console.log('📂 Filesystem change:', change.action, change.path);
+            requestFilesystem(currentPathRef.current);
+            break;
+          }
           case 'error':
             console.error('Server error:', (message.payload as { message: string }).message);
             break;

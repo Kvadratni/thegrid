@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import { useAgentStore, FileSystemNode } from '../stores/agentStore';
 import { calculateLayout, LayoutNode } from '../utils/fileSystemLayout';
 import FileEffect from './effects/FileEffect';
+import FileCrumble from './effects/FileCrumble';
+import FileRise from './effects/FileRise';
 
 interface FileSystemProps {
   node: FileSystemNode;
@@ -438,6 +440,7 @@ function ParentPortal({ currentPath }: { currentPath: string }) {
 export default function FileSystem({ node, position }: FileSystemProps) {
   const currentPath = useAgentStore((state) => state.currentPath);
   const fileEffects = useAgentStore((state) => state.fileEffects);
+  const fileAnimations = useAgentStore((state) => state.fileAnimations);
   const layout = useMemo(() => calculateLayout(node), [node]);
 
   const { roads, nodes } = useMemo(() => {
@@ -491,54 +494,59 @@ export default function FileSystem({ node, position }: FileSystemProps) {
     return { roads: roadList, nodes: nodeList };
   }, [layout]);
 
+  // Helper to match paths
+  const pathMatches = (nodePath: string, effectPath: string): boolean => {
+    if (nodePath === effectPath) return true;
+    if (nodePath.endsWith('/' + effectPath)) return true;
+    if (nodePath.endsWith(effectPath)) return true;
+    const effectFileName = effectPath.split('/').pop();
+    const nodeFileName = nodePath.split('/').pop();
+    if (effectFileName && effectFileName === nodeFileName) {
+      const effectParts = effectPath.split('/');
+      const nodeParts = nodePath.split('/');
+      if (effectParts.length <= nodeParts.length) {
+        const nodeEnd = nodeParts.slice(-effectParts.length);
+        return effectParts.every((p, i) => p === nodeEnd[i]);
+      }
+    }
+    return false;
+  };
+
+  const findNodeInfo = (path: string, layoutNode: LayoutNode, parentX: number, parentZ: number): { x: number; z: number; height: number } | null => {
+    const absoluteX = parentX + layoutNode.x;
+    const absoluteZ = parentZ + layoutNode.z;
+
+    if (pathMatches(layoutNode.node.path, path)) {
+      const isDir = layoutNode.node.type === 'directory';
+      const height = isDir ? 0.3 : Math.max(1, Math.min(6, (layoutNode.node.size || 1000) / 3000));
+      return { x: absoluteX, z: absoluteZ, height };
+    }
+
+    if (layoutNode.children) {
+      for (const child of layoutNode.children) {
+        const result = findNodeInfo(path, child, absoluteX, absoluteZ);
+        if (result) return result;
+      }
+    }
+
+    return null;
+  };
+
   const effectPositions = useMemo(() => {
-    // Find position and height for each effect
-    // Handles both full paths and relative paths
-    function pathMatches(nodePath: string, effectPath: string): boolean {
-      if (nodePath === effectPath) return true;
-      // Check if effectPath is a suffix of nodePath (relative path match)
-      if (nodePath.endsWith('/' + effectPath)) return true;
-      if (nodePath.endsWith(effectPath)) return true;
-      // Check if nodePath ends with just the filename
-      const effectFileName = effectPath.split('/').pop();
-      const nodeFileName = nodePath.split('/').pop();
-      if (effectFileName && effectFileName === nodeFileName) {
-        // Extra check: verify path segments match
-        const effectParts = effectPath.split('/');
-        const nodeParts = nodePath.split('/');
-        if (effectParts.length <= nodeParts.length) {
-          const nodeEnd = nodeParts.slice(-effectParts.length);
-          return effectParts.every((p, i) => p === nodeEnd[i]);
-        }
-      }
-      return false;
-    }
-
-    function findNodeInfo(path: string, layoutNode: LayoutNode, parentX: number, parentZ: number): { x: number; z: number; height: number } | null {
-      const absoluteX = parentX + layoutNode.x;
-      const absoluteZ = parentZ + layoutNode.z;
-
-      if (pathMatches(layoutNode.node.path, path)) {
-        const isDir = layoutNode.node.type === 'directory';
-        const height = isDir ? 0.3 : Math.max(1, Math.min(6, (layoutNode.node.size || 1000) / 3000));
-        return { x: absoluteX, z: absoluteZ, height };
-      }
-
-      if (layoutNode.children) {
-        for (const child of layoutNode.children) {
-          const result = findNodeInfo(path, child, absoluteX, absoluteZ);
-          if (result) return result;
-        }
-      }
-
-      return null;
-    }
-
     return fileEffects.map(effect => {
       const info = findNodeInfo(effect.path, layout, 0, 0);
       return { effect, info };
     }).filter(item => item.info !== null);
   }, [fileEffects, layout]);
+
+  const animationPositions = useMemo(() => {
+    return fileAnimations.map(anim => {
+      const info = findNodeInfo(anim.path, layout, 0, 0);
+      // For delete animations, we may not find the file anymore, so estimate position
+      const estimatedInfo = info || { x: 0, z: 0, height: 2 };
+      return { animation: anim, info: estimatedInfo };
+    });
+  }, [fileAnimations, layout]);
 
   return (
     <CameraPositionProvider>
@@ -559,6 +567,27 @@ export default function FileSystem({ node, position }: FileSystemProps) {
             effect={effect}
             position={[info!.x, info!.height, info!.z]}
           />
+        ))}
+
+        {animationPositions.map(({ animation, info }) => (
+          animation.type === 'delete' ? (
+            <FileCrumble
+              key={`crumble-${animation.path}-${animation.startTime}`}
+              position={[info.x, 0, info.z]}
+              height={info.height}
+              startTime={animation.startTime}
+              color="#FF0000"
+            />
+          ) : (
+            <FileRise
+              key={`rise-${animation.path}-${animation.startTime}`}
+              position={[info.x, 0, info.z]}
+              height={info.height}
+              startTime={animation.startTime}
+              color="#00FF00"
+              fileName={animation.path.split('/').pop()}
+            />
+          )
         ))}
       </group>
     </CameraPositionProvider>

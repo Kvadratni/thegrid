@@ -27,6 +27,24 @@ const AGENT_COLORS = {
   subagent: '#FF6600',
 };
 
+function isDeleteCommand(command: string): { isDelete: boolean; paths: string[] } {
+  const deletePatterns = [
+    /\brm\s+(?:-[rf]+\s+)?(.+)/,
+    /\brmdir\s+(.+)/,
+    /\bunlink\s+(.+)/,
+  ];
+
+  for (const pattern of deletePatterns) {
+    const match = command.match(pattern);
+    if (match) {
+      const pathsStr = match[1].trim();
+      const paths = pathsStr.split(/\s+/).filter(p => !p.startsWith('-'));
+      return { isDelete: true, paths };
+    }
+  }
+  return { isDelete: false, paths: [] };
+}
+
 function broadcast(message: ServerMessage) {
   const data = JSON.stringify(message);
   clients.forEach((client) => {
@@ -92,6 +110,18 @@ app.post('/api/events', (req, res) => {
     console.log('❌ Invalid event - missing sessionId or hookEvent');
     res.status(400).json({ error: 'Invalid event payload' });
     return;
+  }
+
+  // Ignore hook events from paths that match spawned agent working directories
+  // Hook events have sessionId as a path (starts with /), spawned agents have grid-* IDs
+  if (event.sessionId.startsWith('/')) {
+    for (const [key, agent] of agents.entries()) {
+      if (key.startsWith('grid-') && agent.currentPath?.startsWith(event.sessionId)) {
+        console.log('⏭️ Ignoring hook event - overlaps with spawned agent:', key);
+        res.json({ success: true, ignored: true });
+        return;
+      }
+    }
   }
 
   event.timestamp = event.timestamp || new Date().toISOString();
@@ -171,6 +201,7 @@ app.post('/api/agents/spawn', (req, res) => {
     const args = [
       '-p', prompt,
       '--output-format', 'stream-json',
+      '--verbose',
     ];
 
     if (dangerousMode) {
@@ -224,12 +255,23 @@ app.post('/api/agents/spawn', (req, res) => {
                   seenIds.add(block.id);
                 }
 
-                const filePath = block.input?.file_path || block.input?.path || workingDirectory;
+                let toolName = block.name || 'Unknown';
+                let filePath = block.input?.file_path || block.input?.path || workingDirectory;
+
+                // Check if Bash command is a delete operation
+                if (toolName === 'Bash' && block.input?.command) {
+                  const deleteCheck = isDeleteCommand(block.input.command);
+                  if (deleteCheck.isDelete) {
+                    toolName = 'Delete';
+                    filePath = deleteCheck.paths[0] || filePath;
+                  }
+                }
+
                 const event: AgentEvent = {
                   timestamp: new Date().toISOString(),
                   sessionId,
                   hookEvent: 'PostToolUse',
-                  toolName: block.name || 'Unknown',
+                  toolName,
                   filePath,
                   agentType: 'main',
                 };
@@ -242,6 +284,13 @@ app.post('/api/agents/spawn', (req, res) => {
                   agent.lastActivity = event.timestamp;
                 }
                 broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+
+                // Trigger filesystem refresh for file-modifying operations
+                if (['Write', 'Edit', 'Delete', 'NotebookEdit'].includes(toolName)) {
+                  setTimeout(() => {
+                    broadcast({ type: 'filesystemChange', payload: { action: toolName.toLowerCase(), path: filePath } });
+                  }, 500);
+                }
               } else if (block.type === 'text' && block.text) {
                 // Deduplicate text messages by content hash
                 const textHash = `text:${block.text.slice(0, 100)}`;

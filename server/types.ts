@@ -56,8 +56,8 @@ export interface FileSystemNode {
 }
 
 export interface ServerMessage {
-  type: 'event' | 'agents' | 'filesystem' | 'error';
-  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string };
+  type: 'event' | 'agents' | 'filesystem' | 'error' | 'filesystemChange';
+  payload: AgentEvent | AgentState[] | FileSystemNode | { message: string } | { action: string; path?: string };
 }
 
 export interface ClientMessage {
