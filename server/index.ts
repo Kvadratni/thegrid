@@ -33,13 +33,10 @@ const AGENT_COLORS = {
 let watchedDirectory = '';
 let cachedProcesses: ProcessInfo[] = [];
 
-function getPathDepth(path: string): number {
-  return path.split('/').filter(Boolean).length;
-}
-
 async function getRunningProcesses(basePath: string): Promise<ProcessInfo[]> {
-  // Only scan if path is 3 levels deep or less
-  if (getPathDepth(basePath) > 3) {
+  // Only scan if path is 6 levels deep or less (e.g. /Users/name/Dev/project/sub/folder)
+  const depth = basePath.split('/').filter(Boolean).length;
+  if (depth > 6) {
     return [];
   }
 
@@ -57,6 +54,20 @@ async function getRunningProcesses(basePath: string): Promise<ProcessInfo[]> {
 
       // Skip if doesn't actually contain the path
       if (!fullCommand.includes(basePath)) continue;
+
+      // Extract the working directory from the command path
+      // e.g. /Users/x/Dev/thegrid/client/node_modules/.bin/vite -> /Users/x/Dev/thegrid/client
+      const pathMatch = fullCommand.match(new RegExp(`(${basePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\s]*)`));
+      let cwd = basePath;
+      if (pathMatch) {
+        const fullPath = pathMatch[1];
+        // Remove node_modules and everything after, or .bin, dist, build, etc.
+        const cleanPath = fullPath.replace(/\/(node_modules|\.bin|dist|build|__pycache__|\.venv|venv)\/.*$/, '');
+        // Only use if it's a child of basePath
+        if (cleanPath.startsWith(basePath) && cleanPath.length > basePath.length) {
+          cwd = cleanPath;
+        }
+      }
 
       // Get friendly name from command
       let name = 'Process';
@@ -79,19 +90,29 @@ async function getRunningProcesses(basePath: string): Promise<ProcessInfo[]> {
         port = parseInt(portMatch[1], 10);
       }
 
+      // Only include if cwd is within basePath (not in Library, Applications, hidden dirs, etc.)
+      if (!cwd.startsWith(basePath) || cwd.includes('/Library/') || cwd.includes('/Applications/') || cwd.includes('/.')) {
+        continue;
+      }
+
+      // Skip generic "Process" - only show recognized dev processes
+      if (name === 'Process') continue;
+
       if (!processes.some(p => p.pid === pid)) {
         processes.push({
           pid,
           command: fullCommand.slice(0, 100),
           name,
-          cwd: basePath,
+          cwd,
           port,
         });
       }
     }
 
+    console.log(`📊 Found ${processes.length} dev processes for ${basePath}:`, processes.map(p => ({ name: p.name, cwd: p.cwd })));
     return processes;
-  } catch {
+  } catch (err) {
+    console.log(`📊 No processes found for ${basePath}:`, err);
     return [];
   }
 }
