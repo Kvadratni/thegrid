@@ -46,6 +46,8 @@ export interface AgentState {
   lastActivity: string;
   color: string;
   status: AgentStatus;
+  claudeSessionId?: string;  // The actual Claude session ID for resumption
+  workingDirectory?: string; // Original working directory for the agent
 }
 
 export interface FileSystemNode {

@@ -441,6 +441,8 @@ export default function HUD() {
   const [expanded, setExpanded] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
   const [showAllEvents, setShowAllEvents] = useState(false);
+  const [followUpAgentId, setFollowUpAgentId] = useState<string | null>(null);
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   const currentPath = useAgentStore((state) => state.currentPath);
   const agents = useAgentStore((state) => state.agents);
   const connected = useAgentStore((state) => state.connected);
@@ -513,6 +515,34 @@ export default function HUD() {
     // Get parent folder of the file/folder the agent is working on
     const parentPath = agentPath.split('/').slice(0, -1).join('/') || agentPath;
     setCurrentPath(parentPath);
+  };
+
+  const handleResume = async (sessionId: string) => {
+    if (!followUpPrompt.trim()) return;
+
+    setIsSpawning(true);
+    try {
+      const response = await fetch(`/api/agents/${sessionId}/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: followUpPrompt.trim(),
+          dangerousMode,
+        }),
+      });
+
+      if (response.ok) {
+        setFollowUpPrompt('');
+        setFollowUpAgentId(null);
+      } else {
+        const error = await response.json();
+        console.error('Resume failed:', error);
+      }
+    } catch (err) {
+      console.error('Failed to resume agent:', err);
+    } finally {
+      setIsSpawning(false);
+    }
   };
 
   return (
@@ -826,6 +856,21 @@ export default function HUD() {
                           >
                             KILL
                           </button>
+                        ) : agent.claudeSessionId && agent.status === 'completed' ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setFollowUpAgentId(followUpAgentId === agent.sessionId ? null : agent.sessionId); }}
+                            style={{
+                              background: followUpAgentId === agent.sessionId ? '#00FF00' : 'none',
+                              border: '1px solid #00FF00',
+                              color: followUpAgentId === agent.sessionId ? '#000' : '#00FF00',
+                              padding: '4px 8px',
+                              cursor: 'pointer',
+                              fontSize: '10px',
+                              borderRadius: '3px',
+                            }}
+                          >
+                            CONTINUE
+                          </button>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRemove(agent.sessionId); }}
@@ -843,6 +888,70 @@ export default function HUD() {
                           </button>
                         )}
                       </div>
+                      {/* Follow-up input for this agent */}
+                      {followUpAgentId === agent.sessionId && (
+                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(0, 255, 0, 0.2)' }}>
+                          <textarea
+                            value={followUpPrompt}
+                            onChange={(e) => setFollowUpPrompt(e.target.value)}
+                            placeholder="Enter follow-up message..."
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              width: '100%',
+                              height: '50px',
+                              background: 'rgba(0, 40, 0, 0.5)',
+                              border: '1px solid #00FF00',
+                              borderRadius: '4px',
+                              color: '#FFF',
+                              padding: '8px',
+                              fontSize: '11px',
+                              resize: 'none',
+                              fontFamily: 'monospace',
+                              boxSizing: 'border-box',
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && e.metaKey) {
+                                handleResume(agent.sessionId);
+                              }
+                            }}
+                          />
+                          <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleResume(agent.sessionId); }}
+                              disabled={isSpawning || !followUpPrompt.trim()}
+                              style={{
+                                flex: 1,
+                                padding: '6px',
+                                background: isSpawning || !followUpPrompt.trim() ? '#333' : '#00FF00',
+                                border: 'none',
+                                borderRadius: '3px',
+                                color: '#000',
+                                fontWeight: 'bold',
+                                cursor: isSpawning || !followUpPrompt.trim() ? 'not-allowed' : 'pointer',
+                                fontFamily: 'monospace',
+                                fontSize: '10px',
+                              }}
+                            >
+                              {isSpawning ? '◌ SENDING...' : '▶ SEND'}
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setFollowUpAgentId(null); setFollowUpPrompt(''); }}
+                              style={{
+                                padding: '6px 12px',
+                                background: 'none',
+                                border: '1px solid #666',
+                                borderRadius: '3px',
+                                color: '#666',
+                                cursor: 'pointer',
+                                fontFamily: 'monospace',
+                                fontSize: '10px',
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

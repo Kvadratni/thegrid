@@ -14,6 +14,8 @@ export interface AgentState {
   lastActivity: string;
   color: string;
   status?: AgentStatus;
+  claudeSessionId?: string;
+  workingDirectory?: string;
 }
 
 export interface AgentEvent {

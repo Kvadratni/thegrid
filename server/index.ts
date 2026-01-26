@@ -354,6 +354,7 @@ app.post('/api/agents/spawn', (req, res) => {
       lastActivity: new Date().toISOString(),
       color: AGENT_COLORS.main,
       status: 'running',
+      workingDirectory,
     });
 
     broadcast({ type: 'agents', payload: Array.from(agents.values()) });
@@ -444,6 +445,16 @@ app.post('/api/agents/spawn', (req, res) => {
             const resultKey = `result:${parsed.result?.slice(0, 50)}`;
             if (!seenIds.has(resultKey)) {
               seenIds.add(resultKey);
+
+              // Capture Claude's session ID for future resumption
+              if (parsed.session_id) {
+                const agent = agents.get(`${sessionId}-main`);
+                if (agent) {
+                  agent.claudeSessionId = parsed.session_id;
+                  console.log(`[${sessionId}] Captured Claude session ID: ${parsed.session_id}`);
+                }
+              }
+
               const event: AgentEvent = {
                 timestamp: new Date().toISOString(),
                 sessionId,
@@ -455,6 +466,7 @@ app.post('/api/agents/spawn', (req, res) => {
                   duration_ms: parsed.duration_ms,
                   num_turns: parsed.num_turns,
                   cost_usd: parsed.total_cost_usd,
+                  claudeSessionId: parsed.session_id,
                 },
               };
               broadcast({ type: 'event', payload: event });
@@ -502,6 +514,191 @@ app.post('/api/agents/spawn', (req, res) => {
 
   } catch (err) {
     res.status(500).json({ error: 'Failed to spawn agent', details: String(err) });
+  }
+});
+
+// Resume/follow-up with a completed agent
+app.post('/api/agents/:sessionId/resume', (req, res) => {
+  const { sessionId } = req.params;
+  const { prompt, dangerousMode } = req.body as { prompt: string; dangerousMode?: boolean };
+
+  if (!prompt) {
+    res.status(400).json({ error: 'prompt is required' });
+    return;
+  }
+
+  const agentKey = `${sessionId}-main`;
+  const agent = agents.get(agentKey);
+
+  if (!agent) {
+    res.status(404).json({ error: 'Agent not found' });
+    return;
+  }
+
+  if (!agent.claudeSessionId) {
+    res.status(400).json({ error: 'Agent has no Claude session ID - cannot resume' });
+    return;
+  }
+
+  if (spawnedProcesses.has(sessionId)) {
+    res.status(400).json({ error: 'Agent is still running' });
+    return;
+  }
+
+  const workingDirectory = agent.workingDirectory || agent.currentPath || process.cwd();
+
+  try {
+    const args = [
+      '--resume', agent.claudeSessionId,
+      '-p', prompt,
+      '--output-format', 'stream-json',
+      '--verbose',
+    ];
+
+    if (dangerousMode) {
+      args.push('--dangerously-skip-permissions');
+    }
+
+    console.log(`[${sessionId}] Resuming with Claude session ${agent.claudeSessionId}`);
+
+    const claudeProcess = spawn('claude', args, {
+      cwd: workingDirectory,
+      env: { ...process.env, CLAUDE_SESSION_ID: sessionId },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    seenToolUseIds.set(sessionId, new Set());
+    spawnedProcesses.set(sessionId, claudeProcess);
+
+    // Update agent status
+    agent.status = 'running';
+    agent.lastActivity = new Date().toISOString();
+    broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+
+    // Reuse the same stdout/stderr handlers
+    claudeProcess.stdout?.on('data', (data) => {
+      const output = data.toString();
+      console.log(`[${sessionId}] stdout:`, output.slice(0, 500));
+
+      const lines = output.split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line);
+
+          if (parsed.type === 'assistant' && parsed.message?.content) {
+            const seenIds = seenToolUseIds.get(sessionId) || new Set();
+
+            for (const block of parsed.message.content) {
+              if (block.type === 'tool_use') {
+                if (block.id && seenIds.has(block.id)) continue;
+                if (block.id) seenIds.add(block.id);
+
+                let toolName = block.name || 'Unknown';
+                let filePath = block.input?.file_path || block.input?.path || workingDirectory;
+
+                if (toolName === 'Bash' && block.input?.command) {
+                  const deleteCheck = isDeleteCommand(block.input.command);
+                  if (deleteCheck.isDelete) {
+                    toolName = 'Delete';
+                    filePath = deleteCheck.paths[0] || filePath;
+                  }
+                }
+
+                const event: AgentEvent = {
+                  timestamp: new Date().toISOString(),
+                  sessionId,
+                  hookEvent: 'PostToolUse',
+                  toolName,
+                  filePath,
+                  agentType: 'main',
+                };
+                broadcast({ type: 'event', payload: event });
+
+                agent.currentPath = filePath;
+                agent.lastActivity = event.timestamp;
+                broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+
+                if (['Write', 'Edit', 'Delete', 'NotebookEdit'].includes(toolName)) {
+                  setTimeout(() => {
+                    broadcast({ type: 'filesystemChange', payload: { action: toolName.toLowerCase(), path: filePath } });
+                  }, 500);
+                }
+              } else if (block.type === 'text' && block.text) {
+                const textHash = `text:${block.text.slice(0, 100)}`;
+                const seenIds = seenToolUseIds.get(sessionId) || new Set();
+                if (seenIds.has(textHash)) continue;
+                seenIds.add(textHash);
+
+                const event: AgentEvent = {
+                  timestamp: new Date().toISOString(),
+                  sessionId,
+                  hookEvent: 'AssistantMessage',
+                  agentType: 'main',
+                  message: block.text,
+                };
+                broadcast({ type: 'event', payload: event });
+              }
+            }
+          }
+
+          if (parsed.type === 'result') {
+            const seenIds = seenToolUseIds.get(sessionId) || new Set();
+            const resultKey = `result:${parsed.result?.slice(0, 50)}`;
+            if (!seenIds.has(resultKey)) {
+              seenIds.add(resultKey);
+
+              if (parsed.session_id) {
+                agent.claudeSessionId = parsed.session_id;
+              }
+
+              const event: AgentEvent = {
+                timestamp: new Date().toISOString(),
+                sessionId,
+                hookEvent: 'Result',
+                agentType: 'main',
+                message: parsed.result,
+                details: {
+                  success: !parsed.is_error,
+                  duration_ms: parsed.duration_ms,
+                  num_turns: parsed.num_turns,
+                  cost_usd: parsed.total_cost_usd,
+                  claudeSessionId: parsed.session_id,
+                },
+              };
+              broadcast({ type: 'event', payload: event });
+            }
+          }
+        } catch {
+          // Not JSON
+        }
+      }
+    });
+
+    claudeProcess.stderr?.on('data', (data) => {
+      console.log(`[${sessionId}] stderr:`, data.toString().slice(0, 500));
+    });
+
+    claudeProcess.on('close', (code) => {
+      spawnedProcesses.delete(sessionId);
+      seenToolUseIds.delete(sessionId);
+      agent.status = code === 0 ? 'completed' : 'error';
+      agent.lastActivity = new Date().toISOString();
+      broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+    });
+
+    claudeProcess.on('error', (err) => {
+      console.error(`[${sessionId}] Resume error:`, err);
+      spawnedProcesses.delete(sessionId);
+      agent.status = 'error';
+      agent.lastActivity = new Date().toISOString();
+      broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+    });
+
+    res.json({ success: true, sessionId });
+    console.log(`[${sessionId}] Resumed agent conversation`);
+
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to resume agent', details: String(err) });
   }
 });
 
