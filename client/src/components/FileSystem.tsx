@@ -404,17 +404,17 @@ function ParentPortal({ currentPath }: { currentPath: string }) {
           <primitive object={baseEdgeMaterial} attach="material" />
         </lineSegments>
 
-        <mesh position={[0, PORTAL_HEIGHT / 2, 0]}>
+        <mesh position={[0, PORTAL_HEIGHT / 2, 0]} frustumCulled={false}>
           <cylinderGeometry args={[PORTAL_RADIUS, PORTAL_RADIUS, PORTAL_HEIGHT, 16]} />
           <primitive object={beamMaterial} attach="material" />
         </mesh>
 
-        <mesh position={[0, PORTAL_HEIGHT / 2, 0]}>
+        <mesh position={[0, PORTAL_HEIGHT / 2, 0]} frustumCulled={false}>
           <cylinderGeometry args={[PORTAL_RADIUS * 3, PORTAL_RADIUS * 3, PORTAL_HEIGHT, 16]} />
           <primitive object={glowMaterial} attach="material" />
         </mesh>
 
-        <mesh position={[0, PORTAL_HEIGHT / 2, 0]}>
+        <mesh position={[0, PORTAL_HEIGHT / 2, 0]} frustumCulled={false}>
           <cylinderGeometry args={[PORTAL_RADIUS * 6, PORTAL_RADIUS * 6, PORTAL_HEIGHT, 16]} />
           <primitive object={glowMaterial} attach="material" />
         </mesh>

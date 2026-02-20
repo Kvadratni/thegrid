@@ -459,12 +459,178 @@ function AllEventsPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+function FilesystemNavigator({ onClose }: { onClose: () => void }) {
+  const [inputPath, setInputPath] = useState('');
+  const [entries, setEntries] = useState<Array<{ name: string; path: string; type: string }>>([]);
+  const [browsePath, setBrowsePath] = useState('/');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load directory entries
+  useEffect(() => {
+    const pathToFetch = inputPath.trim() || browsePath;
+    const encodedPath = encodeURIComponent(pathToFetch);
+    fetch(`/api/filesystem/${encodedPath}?depth=1`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.children) {
+          const sorted = [...data.children].sort((a: any, b: any) => {
+            if (a.type === b.type) return a.name.localeCompare(b.name);
+            return a.type === 'directory' ? -1 : 1;
+          });
+          setEntries(sorted);
+          setSelectedIndex(0);
+        }
+      })
+      .catch(() => setEntries([]));
+  }, [browsePath, inputPath]);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const navigate = (path: string) => {
+    setCurrentPath(path);
+    onClose();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(i => Math.min(i + 1, entries.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (inputPath.trim()) {
+        navigate(inputPath.trim());
+      } else if (entries[selectedIndex]) {
+        const entry = entries[selectedIndex];
+        if (entry.type === 'directory') {
+          setBrowsePath(entry.path);
+          setInputPath('');
+        } else {
+          navigate(entry.path.split('/').slice(0, -1).join('/'));
+        }
+      }
+    } else if (e.key === 'Backspace' && !inputPath) {
+      const parent = browsePath.split('/').slice(0, -1).join('/') || '/';
+      setBrowsePath(parent);
+    }
+  };
+
+  const filteredEntries = inputPath.trim()
+    ? entries.filter(e => e.name.toLowerCase().includes(inputPath.toLowerCase()))
+    : entries;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: '20%',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      width: '500px',
+      maxHeight: '60vh',
+      background: 'rgba(0, 0, 10, 0.95)',
+      border: '1px solid #00FFFF',
+      borderRadius: '8px',
+      zIndex: 2000,
+      fontFamily: 'monospace',
+      overflow: 'hidden',
+      boxShadow: '0 0 30px rgba(0, 255, 255, 0.2)',
+    }} onKeyDown={handleKeyDown}>
+      <div style={{ padding: '12px', borderBottom: '1px solid rgba(0, 255, 255, 0.2)' }}>
+        <div style={{ fontSize: '10px', color: '#666', marginBottom: '6px' }}>
+          📂 {browsePath}
+        </div>
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputPath}
+          onChange={(e) => setInputPath(e.target.value)}
+          placeholder="Type path or filter..."
+          style={{
+            width: '100%',
+            background: 'rgba(0, 0, 0, 0.5)',
+            border: '1px solid #00FFFF',
+            borderRadius: '4px',
+            color: '#FFF',
+            padding: '10px 12px',
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
+      <div style={{ maxHeight: '400px', overflowY: 'auto', padding: '4px 0' }}>
+        {filteredEntries.map((entry, i) => (
+          <div
+            key={entry.path}
+            onClick={() => {
+              if (entry.type === 'directory') {
+                setBrowsePath(entry.path);
+                setInputPath('');
+              } else {
+                navigate(entry.path.split('/').slice(0, -1).join('/'));
+              }
+            }}
+            onDoubleClick={() => navigate(entry.path)}
+            style={{
+              padding: '8px 16px',
+              cursor: 'pointer',
+              background: i === selectedIndex ? 'rgba(0, 255, 255, 0.1)' : 'transparent',
+              borderLeft: i === selectedIndex ? '3px solid #00FFFF' : '3px solid transparent',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <span style={{ fontSize: '14px' }}>
+              {entry.type === 'directory' ? '📁' : '📄'}
+            </span>
+            <span style={{
+              color: entry.type === 'directory' ? '#00FFFF' : '#AAA',
+              fontSize: '13px',
+            }}>
+              {entry.name}
+            </span>
+          </div>
+        ))}
+        {filteredEntries.length === 0 && (
+          <div style={{ padding: '20px', color: '#666', textAlign: 'center', fontSize: '12px' }}>
+            No entries found
+          </div>
+        )}
+      </div>
+      <div style={{
+        padding: '8px 12px',
+        borderTop: '1px solid rgba(0, 255, 255, 0.2)',
+        fontSize: '10px',
+        color: '#555',
+        display: 'flex',
+        gap: '12px',
+      }}>
+        <span>↑↓ navigate</span>
+        <span>Enter open</span>
+        <span>⌫ parent dir</span>
+        <span>Esc close</span>
+      </div>
+    </div>
+  );
+}
+
 export default function HUD() {
   const [prompt, setPrompt] = useState('');
   const [isSpawning, setIsSpawning] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
   const [showAllEvents, setShowAllEvents] = useState(false);
+  const [showNavigator, setShowNavigator] = useState(false);
   const [followUpAgentId, setFollowUpAgentId] = useState<string | null>(null);
   const [followUpPrompt, setFollowUpPrompt] = useState('');
   const selectedProvider = useAgentStore((state) => state.selectedProvider);
@@ -517,6 +683,10 @@ export default function HUD() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         setShowSearch(true);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+        e.preventDefault();
+        setShowNavigator(true);
       }
     };
 
@@ -1121,6 +1291,10 @@ export default function HUD() {
 
       {showSearch && (
         <SearchPanel onClose={() => { setShowSearch(false); clearSearch(); }} />
+      )}
+
+      {showNavigator && (
+        <FilesystemNavigator onClose={() => setShowNavigator(false)} />
       )}
     </div>
   );

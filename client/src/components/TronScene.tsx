@@ -19,6 +19,9 @@ export default function TronScene() {
     const currentPathParts = currentPath.split('/').filter(Boolean);
 
     return agents.filter((agent) => {
+      // Spawned agents from the Grid UI are always visible
+      if (agent.sessionId.startsWith('grid-')) return true;
+
       if (!agent.currentPath) return false;
 
       const agentPath = agent.currentPath;
@@ -28,20 +31,24 @@ export default function TronScene() {
         return true;
       }
 
-      // Case 2: Agent path starts with a recognizable suffix of currentPath
-      //       agentPath "thegrid/client/file.tsx" or "Development/thegrid/client/file.tsx"
-      // Only check the last few meaningful segments to avoid false positives
+      // Case 2: Agent's workingDirectory matches
+      if (agent.workingDirectory && (
+        agent.workingDirectory.startsWith(currentPath) ||
+        currentPath.startsWith(agent.workingDirectory)
+      )) {
+        return true;
+      }
+
+      // Case 3: Agent path starts with a recognizable suffix of currentPath
       const meaningfulDepth = Math.min(3, currentPathParts.length);
       for (let i = currentPathParts.length - meaningfulDepth; i < currentPathParts.length; i++) {
         const suffix = currentPathParts.slice(i).join('/');
-        // Require exact segment match (suffix followed by / or exact match)
         if (agentPath === suffix || agentPath.startsWith(suffix + '/')) {
           return true;
         }
       }
 
-      // Case 3: Agent path starts with the current directory name followed by /
-      // e.g., currentPath ends with "thegrid", agentPath is "thegrid/client/file.tsx"
+      // Case 4: Agent path starts with the current directory name followed by /
       if (currentDirName && agentPath.startsWith(currentDirName + '/')) {
         return true;
       }

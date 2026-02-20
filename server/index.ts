@@ -367,7 +367,7 @@ app.get('/api/providers', async (_req, res) => {
   res.json(results);
 });
 
-app.post('/api/agents/spawn', (req, res) => {
+app.post('/api/agents/spawn', async (req, res) => {
   const { workingDirectory, prompt, dangerousMode, provider: requestedProvider } = req.body as {
     workingDirectory: string; prompt: string; dangerousMode?: boolean; provider?: AgentProvider;
   };
@@ -390,10 +390,22 @@ app.post('/api/agents/spawn', (req, res) => {
   try {
     const args = providerConfig.buildArgs(prompt, workingDirectory, dangerousMode);
 
-    console.log(`[${sessionId}] Spawning ${provider}: ${providerConfig.command} ${args.join(' ')}${dangerousMode ? ' (DANGEROUS MODE)' : ''}`);
+    // Resolve the working directory to an absolute path
+    const resolvedCwd = workingDirectory.startsWith('/') ? workingDirectory : join(process.cwd(), workingDirectory);
 
-    const agentProcess = spawn(providerConfig.command, args, {
-      cwd: workingDirectory,
+    // Resolve the command to its full path to avoid ENOENT
+    let resolvedCommand = providerConfig.command;
+    try {
+      const { stdout } = await execAsync(`which ${providerConfig.command}`, { timeout: 2000 });
+      resolvedCommand = stdout.trim();
+    } catch {
+      // Fall back to the bare command name
+    }
+
+    console.log(`[${sessionId}] Spawning ${provider}: ${resolvedCommand} ${args.join(' ')}${dangerousMode ? ' (DANGEROUS MODE)' : ''}`);
+
+    const agentProcess = spawn(resolvedCommand, args, {
+      cwd: resolvedCwd,
       env: { ...process.env, CLAUDE_SESSION_ID: sessionId },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -443,6 +455,11 @@ app.post('/api/agents/spawn', (req, res) => {
 
           let toolName = streamEvent.toolName || 'Unknown';
           let filePath = streamEvent.filePath || workingDirectory;
+
+          // Resolve relative paths to absolute using workingDirectory
+          if (filePath && !filePath.startsWith('/')) {
+            filePath = join(workingDirectory, filePath);
+          }
 
           // Check if Bash command is a delete operation
           if (toolName === 'Bash' && streamEvent.details?.command) {
