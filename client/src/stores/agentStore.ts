@@ -87,6 +87,7 @@ interface AgentStore {
   teleportCounter: number;
   dangerousMode: boolean;
   selectedProvider: AgentProvider;
+  viewingFile: string | null;
 
   setAgents: (agents: AgentState[]) => void;
   setFileSystem: (fs: FileSystemNode) => void;
@@ -94,6 +95,7 @@ interface AgentStore {
   setLastEvent: (event: AgentEvent) => void;
   setConnected: (connected: boolean) => void;
   setSelectedProvider: (provider: AgentProvider) => void;
+  setViewingFile: (path: string | null) => void;
   addEvent: (event: AgentEvent) => void;
   addFileEffect: (effect: FileEffect) => void;
   removeFileEffect: (path: string) => void;
@@ -145,6 +147,7 @@ export const useAgentStore = create<AgentStore>()(
       teleportCounter: 0,
       dangerousMode: false,
       selectedProvider: 'claude',
+      viewingFile: null,
 
       setAgents: (agents) => {
         // Auto-remove completed/error agents after 30 seconds
@@ -185,6 +188,8 @@ export const useAgentStore = create<AgentStore>()(
       selectAgent: (sessionId) => set({ selectedAgentId: sessionId }),
 
       setSelectedProvider: (provider) => set({ selectedProvider: provider }),
+
+      setViewingFile: (path) => set({ viewingFile: path }),
 
       getAgentLogs: (sessionId) => {
         return get().eventLogs.get(sessionId) || [];

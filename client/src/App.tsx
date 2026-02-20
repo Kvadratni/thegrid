@@ -6,6 +6,7 @@ import { useAgentEvents } from './hooks/useAgentEvents';
 
 function App() {
   useAgentEvents();
+  // viewingFile is still tracked in store but now handled within the 3D scene
 
   return (
     <>

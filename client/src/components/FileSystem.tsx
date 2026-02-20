@@ -8,6 +8,7 @@ import FileEffect from './effects/FileEffect';
 import FileCrumble from './effects/FileCrumble';
 import FileRise from './effects/FileRise';
 import ProcessIndicator from './effects/ProcessIndicator';
+import HologramViewer from './HologramViewer';
 
 interface FileSystemProps {
   node: FileSystemNode;
@@ -68,6 +69,8 @@ function getFileColor(extension?: string): string {
 
 function Building({ layout, parentX = 0, parentZ = 0, isRoot = false }: { layout: LayoutNode; parentX?: number; parentZ?: number; isRoot?: boolean }) {
   const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
+  const setViewingFile = useAgentStore((state) => state.setViewingFile);
+  const viewingFile = useAgentStore((state) => state.viewingFile);
   const camPos = useCameraPosition();
 
   const worldX = parentX + layout.x;
@@ -107,6 +110,8 @@ function Building({ layout, parentX = 0, parentZ = 0, isRoot = false }: { layout
   const handleClick = () => {
     if (isDirectory) {
       setCurrentPath(layout.node.path);
+    } else {
+      setViewingFile(layout.node.path);
     }
   };
 
@@ -128,10 +133,8 @@ function Building({ layout, parentX = 0, parentZ = 0, isRoot = false }: { layout
         position={[0, isDirectory ? 0.15 : height / 2, 0]}
         onClick={handleClick}
         onPointerOver={(e) => {
-          if (isDirectory) {
-            e.stopPropagation();
-            document.body.style.cursor = 'pointer';
-          }
+          e.stopPropagation();
+          document.body.style.cursor = 'pointer';
         }}
         onPointerOut={() => {
           document.body.style.cursor = 'default';
@@ -170,6 +173,10 @@ function Building({ layout, parentX = 0, parentZ = 0, isRoot = false }: { layout
       {layout.children?.map((child) => (
         <Building key={child.node.path} layout={child} parentX={worldX} parentZ={worldZ} />
       ))}
+
+      {viewingFile === layout.node.path && !isDirectory && (
+        <HologramViewer filePath={layout.node.path} height={height} />
+      )}
     </group>
   );
 }

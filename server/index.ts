@@ -322,6 +322,63 @@ app.get('/api/filesystem/:encodedPath(*)', async (req, res) => {
   }
 });
 
+// ─── File Content ─────────────────────────────────────────────────────────────
+
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'avif']);
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus']);
+const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v']);
+const MODEL_EXTS = new Set(['glb', 'gltf']);
+const TEXT_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'json', 'md', 'txt', 'css', 'scss', 'html', 'yaml', 'yml', 'sh', 'bash', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 'toml', 'env', 'gitignore', 'lock', 'xml', 'svg', 'sql', 'graphql', 'vue', 'svelte', 'astro', 'conf', 'ini', 'log']);
+
+const MIME_MAP: Record<string, string> = {
+  // Images
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+  bmp: 'image/bmp', ico: 'image/x-icon', tiff: 'image/tiff', avif: 'image/avif',
+  // Audio
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+  flac: 'audio/flac', aac: 'audio/aac', m4a: 'audio/mp4', opus: 'audio/opus',
+  // Video
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+  avi: 'video/x-msvideo', mkv: 'video/x-matroska', m4v: 'video/mp4',
+  // 3D Models
+  glb: 'model/gltf-binary', gltf: 'model/gltf+json',
+};
+
+app.get('/api/file/:encodedPath(*)', async (req, res) => {
+  const { readFile: fsReadFile } = await import('fs/promises');
+  const filePath = decodeURIComponent(req.params.encodedPath);
+  const ext = extname(filePath).slice(1).toLowerCase();
+
+  try {
+    if (IMAGE_EXTS.has(ext)) {
+      const data = await fsReadFile(filePath);
+      const mime = MIME_MAP[ext] || 'application/octet-stream';
+      res.set('Content-Type', mime);
+      res.send(data);
+    } else if (AUDIO_EXTS.has(ext) || VIDEO_EXTS.has(ext) || MODEL_EXTS.has(ext)) {
+      const data = await fsReadFile(filePath);
+      const mime = MIME_MAP[ext] || 'application/octet-stream';
+      res.set('Content-Type', mime);
+      res.set('Accept-Ranges', 'bytes');
+      res.send(data);
+    } else if (TEXT_EXTS.has(ext) || !ext) {
+      const content = await fsReadFile(filePath, 'utf-8');
+      res.json({ type: 'text', content, ext });
+    } else {
+      res.status(415).json({ error: 'Unsupported file type', ext });
+    }
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      res.status(404).json({ error: 'File not found' });
+    } else if (err.code === 'EISDIR') {
+      res.status(400).json({ error: 'Path is a directory' });
+    } else {
+      res.status(500).json({ error: 'Failed to read file', details: String(err) });
+    }
+  }
+});
+
 app.get('/api/agents', (_req, res) => {
   res.json(Array.from(agents.values()));
 });
