@@ -109,6 +109,8 @@ interface AgentStore {
   isGitPanelOpen: boolean;
   gitRepos: string[];          // discovered repo root paths
   activeGitRepoPath: string | null;
+  gitAheadCount: number;       // number of unpushed commits on the active branch
+  gitAnimations: { repoPath: string; type: 'commit' | 'push' | 'pull'; timestamp: number }[];
 
   setAgents: (agents: AgentState[]) => void;
   setFileSystem: (fs: FileSystemNode) => void;
@@ -139,6 +141,8 @@ interface AgentStore {
   setGitPanelOpen: (isOpen: boolean) => void;
   setActiveGitRepoPath: (repoPath: string | null) => void;
   discoverGitRepos: (rootPath: string) => Promise<void>;
+  triggerGitAnimation: (repoPath: string, type: 'commit' | 'push' | 'pull') => void;
+  removeGitAnimation: (timestamp: number) => void;
 }
 
 function searchFileSystem(node: FileSystemNode, query: string, results: string[] = []): string[] {
@@ -184,6 +188,8 @@ export const useAgentStore = create<AgentStore>()(
       isGitPanelOpen: false,
       gitRepos: [],
       activeGitRepoPath: null,
+      gitAheadCount: 0,
+      gitAnimations: [],
 
       setAgents: (agents) => {
         // Auto-remove completed/error agents after 30 seconds
@@ -381,7 +387,8 @@ export const useAgentStore = create<AgentStore>()(
             set({
               isGitRepo: data.isRepo,
               gitBranch: data.branch || '',
-              gitStatus: data.files || []
+              gitStatus: data.files || [],
+              gitAheadCount: data.aheadCount || 0
             });
           }
         } catch (err) {
@@ -404,6 +411,15 @@ export const useAgentStore = create<AgentStore>()(
       setGitPanelOpen: (isOpen) => set({ isGitPanelOpen: isOpen }),
 
       setActiveGitRepoPath: (repoPath) => set({ activeGitRepoPath: repoPath }),
+
+      triggerGitAnimation: (repoPath, type) => {
+        const animation = { repoPath, type, timestamp: Date.now() };
+        set(state => ({ gitAnimations: [...state.gitAnimations, animation] }));
+      },
+
+      removeGitAnimation: (timestamp) => {
+        set(state => ({ gitAnimations: state.gitAnimations.filter(a => a.timestamp !== timestamp) }));
+      },
 
       discoverGitRepos: async (rootPath) => {
         try {

@@ -49,13 +49,21 @@ export async function checkIsGitRepo(dirPath?: string): Promise<boolean> {
     }
 }
 
-export async function getStatus(dirPath?: string): Promise<{ branch: string; files: GitStatusFile[] }> {
+export async function getStatus(dirPath?: string): Promise<{ branch: string; files: GitStatusFile[]; aheadCount: number }> {
     const dir = dirPath || getWorkspaceDir();
     const branch = await runGit('branch --show-current', dir);
     const porcelain = await runGit('status --porcelain', dir);
 
+    let aheadCount = 0;
+    try {
+        const countStr = await runGit('rev-list --count @{u}..HEAD', dir);
+        aheadCount = parseInt(countStr, 10);
+    } catch {
+        aheadCount = 0;
+    }
+
     if (!porcelain) {
-        return { branch, files: [] };
+        return { branch, files: [], aheadCount };
     }
 
     const files: GitStatusFile[] = porcelain.split('\n').map(line => {
@@ -70,7 +78,7 @@ export async function getStatus(dirPath?: string): Promise<{ branch: string; fil
         return { path: filePath, status };
     });
 
-    return { branch, files };
+    return { branch, files, aheadCount };
 }
 
 export async function getLog(dirPath?: string): Promise<GitLogEntry[]> {

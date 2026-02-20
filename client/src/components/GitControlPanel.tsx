@@ -6,6 +6,7 @@ interface Props { onClose: () => void }
 export default function GitControlPanel({ onClose }: Props) {
     const activeGitRepoPath = useAgentStore(state => state.activeGitRepoPath);
     const setActiveGitRepoPath = useAgentStore(state => state.setActiveGitRepoPath);
+    const triggerGitAnimation = useAgentStore(state => state.triggerGitAnimation);
 
     const [gitBranch, setGitBranch] = useState('');
     const [gitStatus, setGitStatus] = useState<Array<{ path: string; status: string }>>([]);
@@ -52,6 +53,7 @@ export default function GitControlPanel({ onClose }: Props) {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Operation failed');
             setSuccess(data.message || data.result || 'Done');
+            if (activeGitRepoPath) triggerGitAnimation(activeGitRepoPath, action as 'commit' | 'push' | 'pull');
             fetchStatus();
             fetchLog();
         } catch (e: any) {
