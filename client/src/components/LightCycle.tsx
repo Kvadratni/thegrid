@@ -2,7 +2,7 @@ import { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Text, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
-import { AgentState, useAgentStore } from '../stores/agentStore';
+import { AgentState, useAgentStore, AgentProvider } from '../stores/agentStore';
 import ActivityTrail from './ActivityTrail';
 import AgentActivity from './effects/AgentActivity';
 import { getPositionForPath } from '../utils/fileSystemLayout';
@@ -15,11 +15,18 @@ const AGENT_OFFSET = 2;
 const MOVE_SPEED = 8;
 const TURN_SPEED = 12;
 
-function getAgentName(sessionId: string): string {
-  if (sessionId.startsWith('grid-')) {
-    return sessionId.replace('grid-', '').toUpperCase();
-  }
-  return sessionId.slice(-6).toUpperCase();
+const PROVIDER_ICONS: Record<AgentProvider, string> = {
+  claude: '●', gemini: '◆', codex: '■', goose: '▲',
+  kilocode: '◎', opencode: '⬡', kimi: '✦', cline: '◇',
+  augment: '⬢', qwen: '★', aider: '▼', copilot: '◈', generic: '○',
+};
+
+function getAgentLabel(agent: AgentState): string {
+  const name = agent.sessionId.startsWith('grid-')
+    ? agent.sessionId.replace('grid-', '').toUpperCase()
+    : agent.sessionId.slice(-6).toUpperCase();
+  const icon = PROVIDER_ICONS[agent.provider || 'claude'] || '●';
+  return `${icon} ${name}`;
 }
 
 function CycleBody({ color }: { color: string }) {
@@ -212,7 +219,7 @@ export default function LightCycle({ agent }: LightCycleProps) {
             outlineWidth={0.02}
             outlineColor="#000000"
           >
-            {agent.agentType === 'main' ? '●' : '○'} {getAgentName(agent.sessionId)}
+            {agent.agentType === 'main' ? '●' : '○'} {getAgentLabel(agent)}
           </Text>
         </Billboard>
 

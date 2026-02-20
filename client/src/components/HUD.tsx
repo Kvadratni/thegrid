@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAgentStore, AgentEvent } from '../stores/agentStore';
+import { useAgentStore, AgentEvent, AgentProvider } from '../stores/agentStore';
 
 function isDirectory(path: string, fileSystem: import('../stores/agentStore').FileSystemNode | null): boolean {
   if (!fileSystem) return false;
@@ -181,6 +181,30 @@ function getAgentName(sessionId: string): string {
   }
   const hash = sessionId.slice(-6).toUpperCase();
   return hash;
+}
+
+const PROVIDER_DISPLAY: Record<AgentProvider, { icon: string; label: string }> = {
+  claude: { icon: '●', label: 'Claude Code' },
+  gemini: { icon: '◆', label: 'Gemini CLI' },
+  codex: { icon: '■', label: 'Codex CLI' },
+  goose: { icon: '▲', label: 'Goose' },
+  kilocode: { icon: '◎', label: 'Kilocode' },
+  opencode: { icon: '⬡', label: 'OpenCode' },
+  kimi: { icon: '✦', label: 'Kimi CLI' },
+  cline: { icon: '◇', label: 'Cline' },
+  augment: { icon: '⬢', label: 'Augment' },
+  qwen: { icon: '★', label: 'Qwen Code' },
+  aider: { icon: '▼', label: 'Aider' },
+  copilot: { icon: '◈', label: 'Copilot' },
+  generic: { icon: '○', label: 'Generic' },
+};
+
+interface ProviderInfo {
+  id: AgentProvider;
+  name: string;
+  color: string;
+  available: boolean;
+  spawnable: boolean;
 }
 
 function LogPanel({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
@@ -366,8 +390,8 @@ function AllEventsPanel({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         ) : (
-          [...allEvents].reverse().map((event: AgentEvent, i: number) => {
-            const isMessage = event.hookEvent === 'AssistantMessage' || event.hookEvent === 'Result';
+          [...allEvents].map((event: AgentEvent, i: number) => {
+            const isMessage = event.hookEvent === 'AssistantMessage' || event.hookEvent === 'Result' || event.hookEvent === 'ParsedText';
             const isResult = event.hookEvent === 'Result';
 
             return (
@@ -443,6 +467,10 @@ export default function HUD() {
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [followUpAgentId, setFollowUpAgentId] = useState<string | null>(null);
   const [followUpPrompt, setFollowUpPrompt] = useState('');
+  const selectedProvider = useAgentStore((state) => state.selectedProvider);
+  const setSelectedProvider = useAgentStore((state) => state.setSelectedProvider);
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [showProviderDropdown, setShowProviderDropdown] = useState(false);
   const currentPath = useAgentStore((state) => state.currentPath);
   const agents = useAgentStore((state) => state.agents);
   const connected = useAgentStore((state) => state.connected);
@@ -457,6 +485,35 @@ export default function HUD() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        document.getElementById('spawn-agent-btn')?.click();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Fetch available providers on mount
+  useEffect(() => {
+    fetch('/api/providers')
+      .then(res => res.json())
+      .then((data: ProviderInfo[]) => {
+        setProviders(data);
+        // Only auto-select if current selected provider is not available
+        // We read it fresh from the store to avoid dependency issues
+        const currentProvider = useAgentStore.getState().selectedProvider;
+        const currentProviderInfo = data.find(p => p.id === currentProvider);
+        if (!currentProviderInfo?.available || !currentProviderInfo?.spawnable) {
+          const firstAvailable = data.find(p => p.available && p.spawnable);
+          if (firstAvailable) useAgentStore.getState().setSelectedProvider(firstAvailable.id);
+        }
+      })
+      .catch(err => console.error('Failed to fetch providers:', err));
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         setShowSearch(true);
@@ -465,6 +522,19 @@ export default function HUD() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Fetch available providers on mount
+  useEffect(() => {
+    fetch('/api/providers')
+      .then(res => res.json())
+      .then((data: ProviderInfo[]) => {
+        setProviders(data);
+        // Auto-select first available provider
+        const firstAvailable = data.find(p => p.available && p.spawnable);
+        if (firstAvailable) setSelectedProvider(firstAvailable.id);
+      })
+      .catch(err => console.error('Failed to fetch providers:', err));
   }, []);
 
   const handleSpawn = async () => {
@@ -479,6 +549,7 @@ export default function HUD() {
           workingDirectory: currentPath,
           prompt: prompt.trim(),
           dangerousMode,
+          provider: selectedProvider,
         }),
       });
 
@@ -646,7 +717,7 @@ export default function HUD() {
                   width: '100%',
                   marginTop: '8px',
                   padding: '10px',
-                  background: isSpawning || !prompt.trim() ? '#333' : '#00FFFF',
+                  background: isSpawning || !prompt.trim() ? '#333' : (providers.find(p => p.id === selectedProvider)?.color || '#00FFFF'),
                   border: 'none',
                   borderRadius: '4px',
                   color: '#000',
@@ -657,8 +728,86 @@ export default function HUD() {
                   letterSpacing: '1px',
                 }}
               >
-                {isSpawning ? '◌ SPAWNING...' : '▶ SPAWN AGENT'}
+                {isSpawning ? '◌ SPAWNING...' : `▶ SPAWN ${(PROVIDER_DISPLAY[selectedProvider]?.label || selectedProvider).toUpperCase()}`}
               </button>
+
+              {/* Provider Selector */}
+              <div style={{ position: 'relative', marginTop: '8px' }}>
+                <button
+                  onClick={() => setShowProviderDropdown(!showProviderDropdown)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: 'rgba(0, 0, 40, 0.8)',
+                    border: `1px solid ${providers.find(p => p.id === selectedProvider)?.color || '#00FFFF'}`,
+                    borderRadius: '4px',
+                    color: providers.find(p => p.id === selectedProvider)?.color || '#00FFFF',
+                    cursor: 'pointer',
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span>
+                    {PROVIDER_DISPLAY[selectedProvider]?.icon} {PROVIDER_DISPLAY[selectedProvider]?.label || selectedProvider}
+                  </span>
+                  <span style={{ fontSize: '8px' }}>{showProviderDropdown ? '▲' : '▼'}</span>
+                </button>
+
+                {showProviderDropdown && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    background: 'rgba(0, 0, 20, 0.98)',
+                    border: '1px solid #333',
+                    borderRadius: '4px',
+                    marginTop: '4px',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    zIndex: 1002,
+                  }}>
+                    {providers.filter(p => p.spawnable).map(provider => (
+                      <div
+                        key={provider.id}
+                        onClick={() => {
+                          if (provider.available) {
+                            setSelectedProvider(provider.id);
+                            setShowProviderDropdown(false);
+                          }
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: provider.available ? 'pointer' : 'not-allowed',
+                          opacity: provider.available ? 1 : 0.35,
+                          background: selectedProvider === provider.id ? 'rgba(255,255,255,0.05)' : 'transparent',
+                          borderLeft: `3px solid ${provider.available ? provider.color : '#333'}`,
+                        }}
+                      >
+                        <span style={{
+                          color: provider.available ? provider.color : '#555',
+                          fontSize: '11px',
+                        }}>
+                          {PROVIDER_DISPLAY[provider.id]?.icon} {provider.name}
+                        </span>
+                        {!provider.available && (
+                          <span style={{ fontSize: '9px', color: '#666' }}>NOT FOUND</span>
+                        )}
+                        {provider.available && selectedProvider === provider.id && (
+                          <span style={{ fontSize: '9px', color: provider.color }}>✓</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div style={{ fontSize: '10px', color: '#666', marginTop: '4px', textAlign: 'center' }}>
                 ⌘+Enter to launch
               </div>
@@ -797,7 +946,7 @@ export default function HUD() {
                     >
                       <div>
                         <div style={{ fontSize: '11px', color: agent.color, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          {agent.agentType === 'main' ? '●' : '○'} {getAgentName(agent.sessionId)}
+                          {agent.agentType === 'main' ? '●' : '○'} {PROVIDER_DISPLAY[agent.provider || 'claude']?.icon || '●'} {getAgentName(agent.sessionId)}
                           {agent.status === 'completed' && (
                             <span style={{ fontSize: '9px', color: '#00FF00', padding: '1px 4px', background: 'rgba(0,255,0,0.1)', borderRadius: '3px' }}>DONE</span>
                           )}
@@ -806,7 +955,8 @@ export default function HUD() {
                           )}
                         </div>
                         <div style={{ fontSize: '9px', color: '#666' }}>
-                          {agent.currentPath?.split('/').pop() || 'idle'}
+                          {agent.provider && PROVIDER_DISPLAY[agent.provider] ? PROVIDER_DISPLAY[agent.provider].label : ''}
+                          {agent.provider ? ' · ' : ''}{agent.currentPath?.split('/').pop() || 'idle'}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '4px' }}>

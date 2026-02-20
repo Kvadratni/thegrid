@@ -7,7 +7,8 @@ import { readdir, stat } from 'fs/promises';
 import { join, extname, basename } from 'path';
 import { randomUUID } from 'crypto';
 import { promisify } from 'util';
-import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo } from './types.js';
+import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo, AgentProvider } from './types.js';
+import { PROVIDER_CONFIGS, PROVIDER_COLORS, PROVIDER_NAMES, PROVIDER_COMMANDS, ALL_PROVIDERS, SPAWNABLE_PROVIDERS, normalizeToolName } from './providers.js';
 
 const execAsync = promisify(exec);
 
@@ -30,6 +31,13 @@ const AGENT_COLORS = {
   subagent: '#FF6600',
 };
 
+function getAgentColor(provider?: AgentProvider, agentType: 'main' | 'subagent' = 'main'): string {
+  if (provider && PROVIDER_COLORS[provider]) {
+    return PROVIDER_COLORS[provider];
+  }
+  return AGENT_COLORS[agentType];
+}
+
 let watchedDirectory = '';
 let cachedProcesses: ProcessInfo[] = [];
 
@@ -41,7 +49,7 @@ async function getRunningProcesses(basePath: string): Promise<ProcessInfo[]> {
   }
 
   try {
-    const { stdout } = await execAsync(`ps aux | grep -E "${basePath}" | grep -v grep`, { timeout: 2000 });
+    const { stdout } = await execAsync(`ps aux | grep -E "${basePath}" | grep -v grep || true`, { timeout: 2000 });
     const lines = stdout.trim().split('\n').filter(Boolean);
     const processes: ProcessInfo[] = [];
 
@@ -234,6 +242,12 @@ app.post('/api/events', (req, res) => {
 
   event.timestamp = event.timestamp || new Date().toISOString();
   event.agentType = event.agentType || 'main';
+  event.provider = event.provider || 'claude';
+
+  // Normalize tool name from any provider format
+  if (event.toolName) {
+    event.toolName = normalizeToolName(event.toolName) as any;
+  }
 
   // Check if Bash command is a delete operation
   if (event.toolName === 'Bash' && event.details?.command) {
@@ -255,8 +269,9 @@ app.post('/api/events', (req, res) => {
       agentType: event.agentType,
       currentPath: event.filePath,
       lastActivity: event.timestamp,
-      color: AGENT_COLORS[event.agentType],
+      color: getAgentColor(event.provider, event.agentType),
       status: 'running',
+      provider: event.provider,
     });
   } else if (event.hookEvent === 'SessionEnd' || event.hookEvent === 'SubagentStop') {
     const agent = agents.get(agentKey);
@@ -275,8 +290,9 @@ app.post('/api/events', (req, res) => {
         agentType: event.agentType,
         currentPath: event.filePath,
         lastActivity: event.timestamp,
-        color: AGENT_COLORS[event.agentType],
+        color: getAgentColor(event.provider, event.agentType),
         status: 'running',
+        provider: event.provider,
       });
     }
   }
@@ -314,175 +330,202 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', agents: agents.size, clients: clients.size });
 });
 
+// ─── Provider Detection ─────────────────────────────────────────────────────
+
+app.get('/api/providers', async (_req, res) => {
+  const results: Array<{
+    id: AgentProvider;
+    name: string;
+    color: string;
+    available: boolean;
+    spawnable: boolean;
+  }> = [];
+
+  for (const providerId of ALL_PROVIDERS) {
+    const command = PROVIDER_COMMANDS[providerId];
+    const spawnable = SPAWNABLE_PROVIDERS.includes(providerId);
+    let available = false;
+
+    if (command) {
+      try {
+        await execAsync(`which ${command}`, { timeout: 2000 });
+        available = true;
+      } catch {
+        available = false;
+      }
+    }
+
+    results.push({
+      id: providerId,
+      name: PROVIDER_NAMES[providerId],
+      color: PROVIDER_COLORS[providerId],
+      available,
+      spawnable,
+    });
+  }
+
+  res.json(results);
+});
+
 app.post('/api/agents/spawn', (req, res) => {
-  const { workingDirectory, prompt, dangerousMode } = req.body as { workingDirectory: string; prompt: string; dangerousMode?: boolean };
+  const { workingDirectory, prompt, dangerousMode, provider: requestedProvider } = req.body as {
+    workingDirectory: string; prompt: string; dangerousMode?: boolean; provider?: AgentProvider;
+  };
 
   if (!workingDirectory || !prompt) {
     res.status(400).json({ error: 'workingDirectory and prompt are required' });
     return;
   }
 
+  const provider: AgentProvider = requestedProvider || 'claude';
+  const providerConfig = PROVIDER_CONFIGS[provider];
+
+  if (!providerConfig) {
+    res.status(400).json({ error: `Unknown or unspawnable provider: ${provider}` });
+    return;
+  }
+
   const sessionId = `grid-${randomUUID().slice(0, 8)}`;
 
   try {
-    const args = [
-      '-p', prompt,
-      '--output-format', 'stream-json',
-      '--verbose',
-    ];
+    const args = providerConfig.buildArgs(prompt, workingDirectory, dangerousMode);
 
-    if (dangerousMode) {
-      args.push('--dangerously-skip-permissions');
-    }
+    console.log(`[${sessionId}] Spawning ${provider}: ${providerConfig.command} ${args.join(' ')}${dangerousMode ? ' (DANGEROUS MODE)' : ''}`);
 
-    console.log(`[${sessionId}] Spawning: claude ${args.join(' ')}${dangerousMode ? ' (DANGEROUS MODE)' : ' (SAFE MODE - writes will fail)'}`);
-
-    const claudeProcess = spawn('claude', args, {
+    const agentProcess = spawn(providerConfig.command, args, {
       cwd: workingDirectory,
       env: { ...process.env, CLAUDE_SESSION_ID: sessionId },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     seenToolUseIds.set(sessionId, new Set());
-
-    spawnedProcesses.set(sessionId, claudeProcess);
+    spawnedProcesses.set(sessionId, agentProcess);
 
     agents.set(`${sessionId}-main`, {
       sessionId,
       agentType: 'main',
       currentPath: workingDirectory,
       lastActivity: new Date().toISOString(),
-      color: AGENT_COLORS.main,
+      color: providerConfig.color,
       status: 'running',
+      provider,
       workingDirectory,
     });
 
     broadcast({ type: 'agents', payload: Array.from(agents.values()) });
 
-    claudeProcess.stdout?.on('data', (data) => {
-      const output = data.toString();
-      console.log(`[${sessionId}] stdout:`, output.slice(0, 500));
+    // Buffer for incomplete JSON lines
+    let stdoutBuffer = '';
 
-      const lines = output.split('\n').filter(Boolean);
+    agentProcess.stdout?.on('data', (data) => {
+      stdoutBuffer += data.toString();
+      const lines = stdoutBuffer.split('\n');
+      // Keep the last incomplete line in the buffer
+      stdoutBuffer = lines.pop() || '';
+
       for (const line of lines) {
-        try {
-          const parsed = JSON.parse(line);
-          console.log(`[${sessionId}] Parsed JSON type:`, parsed.type);
+        if (!line.trim()) continue;
+        console.log(`[${sessionId}] stdout:`, line.slice(0, 300));
 
-          // Handle assistant messages
-          if (parsed.type === 'assistant' && parsed.message?.content) {
-            const seenIds = seenToolUseIds.get(sessionId) || new Set();
+        const seenIds = seenToolUseIds.get(sessionId) || new Set();
 
-            for (const block of parsed.message.content) {
-              if (block.type === 'tool_use') {
-                // Deduplicate by tool_use id
-                if (block.id && seenIds.has(block.id)) {
-                  continue;
-                }
-                if (block.id) {
-                  seenIds.add(block.id);
-                }
+        // Use provider-specific parser
+        const streamEvent = providerConfig.parseStream(line, sessionId, workingDirectory);
+        if (!streamEvent) continue;
 
-                let toolName = block.name || 'Unknown';
-                let filePath = block.input?.file_path || block.input?.path || workingDirectory;
+        if (streamEvent.type === 'tool_use') {
+          // Deduplicate
+          const dedupeKey = `tool:${streamEvent.toolName}:${streamEvent.filePath}`;
+          if (seenIds.has(dedupeKey)) continue;
+          seenIds.add(dedupeKey);
+          // Auto-expire dedup keys after 2s
+          setTimeout(() => seenIds.delete(dedupeKey), 2000);
 
-                // Check if Bash command is a delete operation
-                if (toolName === 'Bash' && block.input?.command) {
-                  const deleteCheck = isDeleteCommand(block.input.command);
-                  if (deleteCheck.isDelete) {
-                    toolName = 'Delete';
-                    filePath = deleteCheck.paths[0] || filePath;
-                  }
-                }
+          let toolName = streamEvent.toolName || 'Unknown';
+          let filePath = streamEvent.filePath || workingDirectory;
 
-                const event: AgentEvent = {
-                  timestamp: new Date().toISOString(),
-                  sessionId,
-                  hookEvent: 'PostToolUse',
-                  toolName,
-                  filePath,
-                  agentType: 'main',
-                };
-                console.log(`[${sessionId}] Broadcasting tool event:`, event.toolName, block.id);
-                broadcast({ type: 'event', payload: event });
-
-                const agent = agents.get(`${sessionId}-main`);
-                if (agent) {
-                  agent.currentPath = filePath;
-                  agent.lastActivity = event.timestamp;
-                }
-                broadcast({ type: 'agents', payload: Array.from(agents.values()) });
-
-                // Trigger filesystem refresh for file-modifying operations
-                if (['Write', 'Edit', 'Delete', 'NotebookEdit'].includes(toolName)) {
-                  setTimeout(() => {
-                    broadcast({ type: 'filesystemChange', payload: { action: toolName.toLowerCase(), path: filePath } });
-                  }, 500);
-                }
-              } else if (block.type === 'text' && block.text) {
-                // Deduplicate text messages by content hash
-                const textHash = `text:${block.text.slice(0, 100)}`;
-                if (seenIds.has(textHash)) {
-                  continue;
-                }
-                seenIds.add(textHash);
-
-                const event: AgentEvent = {
-                  timestamp: new Date().toISOString(),
-                  sessionId,
-                  hookEvent: 'AssistantMessage',
-                  agentType: 'main',
-                  message: block.text,
-                };
-                broadcast({ type: 'event', payload: event });
-              }
+          // Check if Bash command is a delete operation
+          if (toolName === 'Bash' && streamEvent.details?.command) {
+            const deleteCheck = isDeleteCommand(streamEvent.details.command as string);
+            if (deleteCheck.isDelete) {
+              toolName = 'Delete';
+              filePath = deleteCheck.paths[0] || filePath;
             }
           }
 
-          // Handle final result
-          if (parsed.type === 'result') {
-            const seenIds = seenToolUseIds.get(sessionId) || new Set();
-            const resultKey = `result:${parsed.result?.slice(0, 50)}`;
-            if (!seenIds.has(resultKey)) {
-              seenIds.add(resultKey);
+          const event: AgentEvent = {
+            timestamp: new Date().toISOString(),
+            sessionId,
+            hookEvent: 'PreToolUse', // Fired when ACP streams a tool call
+            toolName: toolName as any,
+            filePath,
+            agentType: 'main',
+            provider,
+          };
+          console.log(`[${sessionId}] Broadcasting tool event:`, event.toolName);
+          broadcast({ type: 'event', payload: event });
 
-              // Capture Claude's session ID for future resumption
-              if (parsed.session_id) {
-                const agent = agents.get(`${sessionId}-main`);
-                if (agent) {
-                  agent.claudeSessionId = parsed.session_id;
-                  console.log(`[${sessionId}] Captured Claude session ID: ${parsed.session_id}`);
-                }
-              }
+          const agent = agents.get(`${sessionId}-main`);
+          if (agent) {
+            agent.currentPath = filePath;
+            agent.lastActivity = event.timestamp;
+          }
+          broadcast({ type: 'agents', payload: Array.from(agents.values()) });
 
-              const event: AgentEvent = {
-                timestamp: new Date().toISOString(),
-                sessionId,
-                hookEvent: 'Result',
-                agentType: 'main',
-                message: parsed.result,
-                details: {
-                  success: !parsed.is_error,
-                  duration_ms: parsed.duration_ms,
-                  num_turns: parsed.num_turns,
-                  cost_usd: parsed.total_cost_usd,
-                  claudeSessionId: parsed.session_id,
-                },
-              };
-              broadcast({ type: 'event', payload: event });
+          if (['Write', 'Edit', 'Delete', 'NotebookEdit'].includes(toolName)) {
+            setTimeout(() => {
+              broadcast({ type: 'filesystemChange', payload: { action: toolName.toLowerCase(), path: filePath } });
+            }, 500);
+          }
+
+        } else if (streamEvent.type === 'text') {
+          const textHash = `text:${streamEvent.message?.slice(0, 100)}`;
+          if (seenIds.has(textHash)) continue;
+          seenIds.add(textHash);
+
+          const event: AgentEvent = {
+            timestamp: new Date().toISOString(),
+            sessionId,
+            hookEvent: 'AssistantMessage',
+            agentType: 'main',
+            message: streamEvent.message,
+            provider,
+          };
+          broadcast({ type: 'event', payload: event });
+
+        } else if (streamEvent.type === 'result') {
+          const resultKey = `result:${streamEvent.message?.slice(0, 50)}`;
+          if (seenIds.has(resultKey)) continue;
+          seenIds.add(resultKey);
+
+          // Capture Claude's session ID for resumption
+          if (streamEvent.details?.claudeSessionId) {
+            const agent = agents.get(`${sessionId}-main`);
+            if (agent) {
+              agent.claudeSessionId = streamEvent.details.claudeSessionId as string;
+              console.log(`[${sessionId}] Captured session ID: ${streamEvent.details.claudeSessionId}`);
             }
           }
-        } catch {
-          // Not JSON, ignore
+
+          const event: AgentEvent = {
+            timestamp: new Date().toISOString(),
+            sessionId,
+            hookEvent: 'Result',
+            agentType: 'main',
+            message: streamEvent.message,
+            details: streamEvent.details,
+            provider,
+          };
+          broadcast({ type: 'event', payload: event });
         }
       }
     });
 
-    claudeProcess.stderr?.on('data', (data) => {
+    agentProcess.stderr?.on('data', (data) => {
       console.log(`[${sessionId}] stderr:`, data.toString().slice(0, 500));
     });
 
-    claudeProcess.on('close', (code, signal) => {
+    agentProcess.on('close', (code, signal) => {
       spawnedProcesses.delete(sessionId);
       seenToolUseIds.delete(sessionId);
       const agent = agents.get(`${sessionId}-main`);
@@ -494,7 +537,7 @@ app.post('/api/agents/spawn', (req, res) => {
       console.log(`[${sessionId}] Agent finished with code ${code}, signal ${signal}`);
     });
 
-    claudeProcess.on('error', (err) => {
+    agentProcess.on('error', (err) => {
       console.error(`[${sessionId}] Spawn error:`, err);
       spawnedProcesses.delete(sessionId);
       const agent = agents.get(`${sessionId}-main`);
@@ -505,12 +548,12 @@ app.post('/api/agents/spawn', (req, res) => {
       broadcast({ type: 'agents', payload: Array.from(agents.values()) });
     });
 
-    claudeProcess.on('spawn', () => {
-      console.log(`[${sessionId}] Process spawned successfully, pid: ${claudeProcess.pid}`);
+    agentProcess.on('spawn', () => {
+      console.log(`[${sessionId}] Process spawned successfully, pid: ${agentProcess.pid}`);
     });
 
-    res.json({ success: true, sessionId });
-    console.log(`Spawned agent ${sessionId} in ${workingDirectory}`);
+    res.json({ success: true, sessionId, provider });
+    console.log(`Spawned ${provider} agent ${sessionId} in ${workingDirectory}`);
 
   } catch (err) {
     res.status(500).json({ error: 'Failed to spawn agent', details: String(err) });

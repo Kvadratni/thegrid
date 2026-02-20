@@ -1,11 +1,12 @@
 # The Grid - Agent Orchestration Visualizer
 
-A 3D Tron-inspired visualization of Claude Code agent activity. Watch AI agents navigate your codebase as light cycles on neon highways, with real-time visual effects for every action.
+A 3D Tron-inspired visualization of AI agent activity. Watch agents from **Claude Code, Gemini CLI, Codex, Goose, Kilocode, OpenCode, Aider**, and more navigate your codebase as light cycles on neon highways, with real-time visual effects for every action.
 
 ## Features
 
 - **3D File System Visualization** - Directories as neon road networks, files as glowing buildings
-- **Agent Light Cycles** - Watch Claude agents move through your codebase in real-time
+- **Multi-Agent Support** - 13+ ACP-enabled agents with auto-detection and provider-specific colors
+- **Agent Light Cycles** - Watch agents move through your codebase in real-time, each provider with unique branding
 - **Tool-Specific Effects** - Distinct animations for each tool type:
   - Bash: Green binary digits (0/1) floating upward
   - Read: Blue scanning lines sweeping down
@@ -79,8 +80,9 @@ Add to `~/.claude/settings.json`:
 
 ```
 ┌─────────────────┐     HTTP POST      ┌──────────────────┐    WebSocket    ┌─────────────────┐
-│   Claude Code   │ ─────────────────► │  Bridge Server   │ ◄─────────────► │   React + R3F   │
-│     + Hooks     │                    │   (Node.js)      │                 │   3D Frontend   │
+│ Claude / Gemini  │ ─────────────────► │  Bridge Server   │ ◄─────────────► │   React + R3F   │
+│ Codex / Goose   │  (hooks or spawn)  │   (Node.js)      │                 │   3D Frontend   │
+│ Kilocode / ...  │                    │  + Providers     │                 │  + Provider UI  │
 └─────────────────┘                    └──────────────────┘                 └─────────────────┘
 ```
 
@@ -107,8 +109,13 @@ Add to `~/.claude/settings.json`:
 
 | Element | Color | Description |
 |---------|-------|-------------|
-| Main Agent | Cyan (#00FFFF) | Primary Claude Code agent |
-| Subagent | Orange (#FF6600) | Spawned sub-agents (Task tool) |
+| Claude Agent | Cyan (#00FFFF) | Claude Code CLI |
+| Gemini Agent | Blue (#4285F4) | Google Gemini CLI |
+| Codex Agent | Green (#10A37F) | OpenAI Codex CLI |
+| Goose Agent | Orange (#FF6600) | Block's Goose |
+| Kilocode Agent | Magenta (#E91E63) | Kilocode CLI |
+| OpenCode Agent | Lime (#76FF03) | OpenCode CLI |
+| Other Agents | Various | Each provider has a unique color |
 | Directories | Cyan | Folder nodes with roads connecting |
 | Code Files | Cyan | .ts, .js, .py, .rs, etc. |
 | Config Files | Yellow | .json, .yaml, .toml, etc. |
@@ -130,23 +137,25 @@ Add to `~/.claude/settings.json`:
 thegrid/
 ├── server/                    # WebSocket bridge server
 │   ├── index.ts              # Express + WebSocket server
+│   ├── providers.ts          # Agent provider configs & stream parsers
 │   └── types.ts              # TypeScript interfaces
 ├── client/                    # React + Three.js frontend
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── TronScene.tsx      # Main 3D scene
 │   │   │   ├── FileSystem.tsx     # Directory/file visualization
-│   │   │   ├── LightCycle.tsx     # Agent representation
-│   │   │   ├── HUD.tsx            # 2D overlay interface
+│   │   │   ├── LightCycle.tsx     # Agent representation (provider-branded)
+│   │   │   ├── HUD.tsx            # 2D overlay w/ provider selector
 │   │   │   └── effects/           # Visual effect components
 │   │   ├── hooks/
 │   │   │   └── useAgentEvents.ts  # WebSocket connection
 │   │   ├── stores/
-│   │   │   └── agentStore.ts      # Zustand state management
+│   │   │   └── agentStore.ts      # Zustand state (multi-provider)
 │   │   └── utils/
 │   │       └── fileSystemLayout.ts
 ├── hooks/
-│   └── activity-reporter.sh  # Claude Code hook script
+│   ├── activity-reporter.sh  # Claude Code hook script
+│   └── universal-hook.sh     # Universal hook for any agent
 └── claude-settings.json      # Hook configuration template
 ```
 

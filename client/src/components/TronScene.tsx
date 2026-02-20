@@ -24,13 +24,11 @@ export default function TronScene() {
       const agentPath = agent.currentPath;
 
       // Case 1: Exact prefix match (both absolute paths)
-      // e.g., agentPath "/Users/mnovich/Development/thegrid/client/file.tsx"
       if (agentPath.startsWith(currentPath + '/') || agentPath === currentPath) {
         return true;
       }
 
       // Case 2: Agent path starts with a recognizable suffix of currentPath
-      // e.g., currentPath "/Users/mnovich/Development/thegrid"
       //       agentPath "thegrid/client/file.tsx" or "Development/thegrid/client/file.tsx"
       // Only check the last few meaningful segments to avoid false positives
       const meaningfulDepth = Math.min(3, currentPathParts.length);
