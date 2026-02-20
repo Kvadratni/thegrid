@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Terminal, Box, GitBranch, Cpu, Github, ExternalLink } from 'lucide-react';
 import './index.css';
@@ -26,6 +27,8 @@ function Navbar() {
 }
 
 function LandingPage() {
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
   return (
     <div className="pt-nav">
       {/* Hero Section */}
@@ -46,6 +49,8 @@ function LandingPage() {
           <img
             src={`/thegrid/demo.webp`}
             alt="The Grid Agent Orchestration Demo"
+            className="clickable-image"
+            onClick={() => setSelectedImage('/thegrid/demo.webp')}
             style={{ width: '100%', display: 'block' }}
           />
           <div className="video-overlay"></div>
@@ -61,31 +66,46 @@ function LandingPage() {
             <div className="feature-icon"><Box size={24} /></div>
             <h3 className="mono">3D File System</h3>
             <p>Directories map to neon road networks while files rise as glowing buildings. Real-time file creation and deletion animations.</p>
+            <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
+              <img src="/thegrid/img/filesystem.png" alt="3D File System" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/filesystem.png')} style={{ width: '100%', display: 'block' }} />
+            </div>
           </div>
 
           <div className="glass-panel feature-card">
             <div className="feature-icon"><Cpu size={24} /></div>
             <h3 className="mono">ACP-First Protocol</h3>
             <p>Pre-configured to securely run 13+ <a href="#/docs" style={{ color: 'var(--neon-cyan)' }}>ACP-enabled agents</a> including Claude, Kilo, and Gemini. Auto-detection ensures optimal connection.</p>
+            <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
+              <img src="/thegrid/img/agent.png" alt="ACP-First Protocol HUD" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/agent.png')} style={{ width: '100%', display: 'block' }} />
+            </div>
           </div>
 
           <div className="glass-panel feature-card">
             <div className="feature-icon"><Terminal size={24} /></div>
             <h3 className="mono">Running Processes</h3>
             <p>Floating indicators dynamically appear above directories to show active services (Node.js, Python, Vite, etc.) in real-time, visualizing what is actually running on your grid.</p>
-            {/* PROCESS_SCREENSHOT_PLACEHOLDER */}
+            <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
+              <img src="/thegrid/img/running-process.png" alt="Running Process Indicator" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/running-process.png')} style={{ width: '100%', display: 'block' }} />
+            </div>
           </div>
 
           <div className="glass-panel feature-card">
             <div className="feature-icon"><GitBranch size={24} /></div>
             <h3 className="mono">Git Crystal Engine</h3>
             <p>Per-repo floating crystals indicate cleanliness (cyan/yellow) with orbiting orbs for unpushed commits. Full source control HUD included.</p>
+            <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
+              <img src="/thegrid/img/git.png" alt="Git Crystal" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/git.png')} style={{ width: '100%', display: 'block' }} />
+            </div>
           </div>
 
           <div className="glass-panel feature-card" style={{ gridColumn: '1 / -1' }}>
             <h3 className="mono text-gradient">File Previews</h3>
             <p style={{ maxWidth: '800px', marginBottom: '1rem' }}>Click on any glowing file building to instantly access a rich, syntax-highlighted code preview without leaving the grid. See exactly what your agents are modifying in real-time.</p>
-            {/* FILE_PREVIEW_SCREENSHOT_PLACEHOLDER */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+              <img src="/thegrid/img/text-preview.png" alt="Text Preview" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/text-preview.png')} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
+              <img src="/thegrid/img/image-preview.png" alt="Image Preview" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/image-preview.png')} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
+              <img src="/thegrid/img/3dmodel-preview.png" alt="3D Model Preview" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/3dmodel-preview.png')} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
+            </div>
           </div>
 
         </div>
@@ -95,6 +115,13 @@ function LandingPage() {
       <footer style={{ borderTop: '1px solid var(--neon-cyan-dim)', padding: '2rem 0', textAlign: 'center', marginTop: '4rem' }}>
         <p className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>// INIT_SEQUENCE COMPLETED. THE GRID IS ONLINE.</p>
       </footer>
+
+      {/* Lightbox Modal */}
+      {selectedImage && (
+        <div className="lightbox-overlay" onClick={() => setSelectedImage(null)}>
+          <img src={selectedImage} alt="Enlarged view" className="lightbox-image" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   );
 }
