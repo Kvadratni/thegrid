@@ -301,6 +301,7 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
             return args;
         },
         parseStream: parseClaudeStream,
+        acpCommand: 'claude-agent-acp',
     },
     gemini: {
         name: 'Gemini CLI',
@@ -313,6 +314,8 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
             return args;
         },
         parseStream: parseGenericStream,
+        acpCommand: 'gemini',
+        acpArgs: ['--experimental-acp'],
     },
     codex: {
         name: 'Codex CLI',
@@ -321,6 +324,7 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
         icon: '■',
         buildArgs: (prompt) => ['-q', '--json', prompt],
         parseStream: parseCodexStream,
+        acpCommand: 'codex-acp',
     },
     goose: {
         name: 'Goose',
@@ -329,6 +333,8 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
         icon: '▲',
         buildArgs: (prompt) => ['run', '--text', prompt, '--output-format', 'stream-json'],
         parseStream: parseGooseStream,
+        acpCommand: 'goose',
+        acpArgs: ['acp'],
     },
     kilocode: {
         name: 'Kilocode',
@@ -337,6 +343,7 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
         icon: '◎',
         buildArgs: (prompt) => ['--json', prompt],
         parseStream: parseGenericStream,
+        acpCommand: 'kilo-acp',
     },
     opencode: {
         name: 'OpenCode',
@@ -345,6 +352,7 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
         icon: '⬡',
         buildArgs: (prompt) => ['run', prompt],
         parseStream: parseGenericStream,
+        acpCommand: 'opencode',
     },
     kimi: {
         name: 'Kimi CLI',
@@ -353,6 +361,7 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
         icon: '✦',
         buildArgs: (prompt) => ['-p', prompt],
         parseStream: parseGenericStream,
+        acpCommand: 'kimi',
     },
     aider: {
         name: 'Aider',

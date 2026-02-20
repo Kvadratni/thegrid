@@ -5,7 +5,8 @@ A 3D Tron-inspired visualization of AI agent activity. Watch agents from **Claud
 ## Features
 
 - **3D File System Visualization** - Directories as neon road networks, files as glowing buildings
-- **Multi-Agent Support** - 13+ ACP-enabled agents with auto-detection and provider-specific colors
+- **Multi-Agent Support** - 13+ agents with auto-detection and provider-specific colors
+- **ACP-First Protocol** - Prefers Agent Client Protocol when available, with automatic fallback to legacy parsing
 - **Agent Light Cycles** - Watch agents move through your codebase in real-time, each provider with unique branding
 - **Tool-Specific Effects** - Distinct animations for each tool type:
   - Bash: Green binary digits (0/1) floating upward
@@ -30,6 +31,25 @@ A 3D Tron-inspired visualization of AI agent activity. Watch agents from **Claud
 - **Multi-Repo Detection** - Auto-discovers all Git repositories under the workspace
 - **Event Logging** - Full activity log with persistence across refreshes
 - **Dangerous Mode** - Toggle to allow agents to bypass permission prompts
+
+## ACP Protocol Support
+
+The Grid uses [Agent Client Protocol (ACP)](https://agentclientprotocol.com) as the **default** for spawning agents. If an ACP binary is detected on your system, it is used automatically. Otherwise, The Grid falls back to legacy stdout-based parsing.
+
+### Installing ACP Adapters
+
+```bash
+# Claude Code (via Zed's adapter)
+npm install -g @zed-industries/claude-agent-acp
+
+# Codex CLI (via Zed's adapter)
+npm install -g @zed-industries/codex-acp
+
+# Kilo Code
+npm install -g kilo-acp
+```
+
+**Native ACP** (no extra install needed): Gemini CLI (`--experimental-acp`), Goose (`goose acp`), OpenCode, Kimi CLI
 
 ## Quick Start
 
@@ -145,6 +165,7 @@ Add to `~/.claude/settings.json`:
 | Component | Technology |
 |-----------|------------|
 | Server | Node.js, Express, WebSocket (ws) |
+| Agent Protocol | ACP SDK (`@agentclientprotocol/sdk`) |
 | Frontend | React 18, TypeScript, Vite |
 | 3D Engine | Three.js via @react-three/fiber |
 | State | Zustand with persistence |
@@ -155,6 +176,7 @@ Add to `~/.claude/settings.json`:
 thegrid/
 ├── server/                    # WebSocket bridge server
 │   ├── index.ts              # Express + WebSocket + Git API server
+│   ├── acp-client.ts         # ACP protocol client (bidirectional NDJSON)
 │   ├── git.ts                # Git operations (status, branch, checkout, push/pull)
 │   ├── providers.ts          # Agent provider configs & stream parsers
 │   └── types.ts              # TypeScript interfaces

@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { promisify } from 'util';
 import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo, AgentProvider } from './types.js';
 import { PROVIDER_CONFIGS, PROVIDER_COLORS, PROVIDER_NAMES, PROVIDER_COMMANDS, ALL_PROVIDERS, SPAWNABLE_PROVIDERS, normalizeToolName } from './providers.js';
+import { spawnAcpAgent } from './acp-client.js';
 import * as git from './git.js';
 
 const execAsync = promisify(exec);
@@ -548,6 +549,57 @@ app.post('/api/agents/spawn', async (req, res) => {
   const sessionId = `grid-${randomUUID().slice(0, 8)}`;
 
   try {
+    // ─── ACP-First: Try ACP if provider supports it ──────────────────────────
+    if (providerConfig.acpCommand) {
+      let resolvedAcpCommand: string | null = null;
+      try {
+        const { stdout } = await execAsync(`which ${providerConfig.acpCommand}`, { timeout: 2000 });
+        resolvedAcpCommand = stdout.trim();
+      } catch {
+        // ACP binary not installed — fall through to legacy
+      }
+
+      if (resolvedAcpCommand) {
+        const resolvedCwd = workingDirectory.startsWith('/') ? workingDirectory : join(process.cwd(), workingDirectory);
+
+        // Register agent immediately
+        agents.set(`${sessionId}-main`, {
+          sessionId,
+          agentType: 'main',
+          currentPath: workingDirectory,
+          lastActivity: new Date().toISOString(),
+          color: providerConfig.color,
+          status: 'running',
+          provider,
+          workingDirectory,
+        });
+        broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+
+        const acpArgs = [...(providerConfig.acpArgs || [])];
+
+        console.log(`[${sessionId}] Using ACP protocol: ${resolvedAcpCommand} ${acpArgs.join(' ')}`);
+
+        await spawnAcpAgent({
+          acpCommand: resolvedAcpCommand,
+          acpArgs,
+          sessionId,
+          workingDirectory: resolvedCwd,
+          prompt,
+          provider,
+          providerColor: providerConfig.color,
+          broadcast,
+          agents,
+          spawnedProcesses,
+        });
+
+        res.json({ sessionId, provider, mode: 'acp' });
+        return;
+      } else {
+        console.log(`[${sessionId}] ACP binary '${providerConfig.acpCommand}' not found, falling back to legacy spawn`);
+      }
+    }
+
+    // ─── Legacy: stdout-parsing spawn ────────────────────────────────────────
     const args = providerConfig.buildArgs(prompt, workingDirectory, dangerousMode);
 
     // Resolve the working directory to an absolute path

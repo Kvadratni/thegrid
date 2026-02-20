@@ -48,6 +48,10 @@ export interface ProviderConfig {
   icon: string;
   buildArgs: (prompt: string, workingDirectory: string, dangerousMode?: boolean) => string[];
   parseStream: (line: string, sessionId: string, workingDirectory: string) => ParsedStreamEvent | null;
+  /** ACP binary command (e.g. 'kilo-acp', 'claude-agent-acp'). When set and available, ACP is preferred. */
+  acpCommand?: string;
+  /** Extra CLI args to pass when launching the ACP binary (e.g. ['--experimental-acp']). */
+  acpArgs?: string[];
 }
 
 export interface ParsedStreamEvent {
