@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { promisify } from 'util';
 import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo, AgentProvider } from './types.js';
 import { PROVIDER_CONFIGS, PROVIDER_COLORS, PROVIDER_NAMES, PROVIDER_COMMANDS, ALL_PROVIDERS, SPAWNABLE_PROVIDERS, normalizeToolName } from './providers.js';
+import * as git from './git.js';
 
 const execAsync = promisify(exec);
 
@@ -424,6 +425,86 @@ app.get('/api/providers', async (_req, res) => {
 
   res.json(results);
 });
+
+// --- GIT ENDPOINTS ---
+
+app.get('/api/git/find-repos', async (req, res) => {
+  try {
+    const root = req.query.root as string;
+    if (!root) return res.status(400).json({ error: 'root query param required' });
+    const repos = await git.findGitRepos(root);
+    res.json(repos);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.get('/api/git/status', async (req, res) => {
+  try {
+    const dirPath = req.query.path as string | undefined;
+    const isRepo = await git.checkIsGitRepo(dirPath);
+    if (!isRepo) {
+      return res.json({ isRepo: false, branch: '', files: [] });
+    }
+    const status = await git.getStatus(dirPath);
+    res.json({ isRepo: true, ...status });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.get('/api/git/log', async (req, res) => {
+  try {
+    const dirPath = req.query.path as string | undefined;
+    const log = await git.getLog(dirPath);
+    res.json(log);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.get('/api/git/diff/:encodedPath(*)?', async (req, res) => {
+  try {
+    const filePath = req.params.encodedPath ? decodeURIComponent(req.params.encodedPath) : undefined;
+    const dirPath = req.query.path as string | undefined;
+    const diff = await git.getDiff(filePath, dirPath);
+    res.json({ diff });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.post('/api/git/commit', async (req, res) => {
+  try {
+    const { message, path: dirPath } = req.body;
+    const result = await git.commitChanges(message, dirPath);
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.post('/api/git/push', async (req, res) => {
+  try {
+    const { path: dirPath } = req.body;
+    const result = await git.pushChanges(dirPath);
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.post('/api/git/pull', async (req, res) => {
+  try {
+    const { path: dirPath } = req.body;
+    const result = await git.pullChanges(dirPath);
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// --- AGENT ENDPOINTS ---
 
 app.post('/api/agents/spawn', async (req, res) => {
   const { workingDirectory, prompt, dangerousMode, provider: requestedProvider } = req.body as {

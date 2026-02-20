@@ -68,6 +68,18 @@ export interface ProcessInfo {
   port?: number;
 }
 
+export interface GitStatusFile {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'untracked';
+}
+
+export interface GitLogEntry {
+  hash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
 interface AgentStore {
   agents: AgentState[];
   fileSystem: FileSystemNode | null;
@@ -88,6 +100,15 @@ interface AgentStore {
   dangerousMode: boolean;
   selectedProvider: AgentProvider;
   viewingFile: string | null;
+
+  // Git
+  isGitRepo: boolean;
+  gitBranch: string;
+  gitStatus: GitStatusFile[];
+  gitLog: GitLogEntry[];
+  isGitPanelOpen: boolean;
+  gitRepos: string[];          // discovered repo root paths
+  activeGitRepoPath: string | null;
 
   setAgents: (agents: AgentState[]) => void;
   setFileSystem: (fs: FileSystemNode) => void;
@@ -111,6 +132,13 @@ interface AgentStore {
   addFileAnimation: (animation: FileAnimation) => void;
   removeFileAnimation: (path: string) => void;
   setProcesses: (processes: ProcessInfo[]) => void;
+
+  // Git Actions
+  refreshGitStatus: () => Promise<void>;
+  refreshGitLog: () => Promise<void>;
+  setGitPanelOpen: (isOpen: boolean) => void;
+  setActiveGitRepoPath: (repoPath: string | null) => void;
+  discoverGitRepos: (rootPath: string) => Promise<void>;
 }
 
 function searchFileSystem(node: FileSystemNode, query: string, results: string[] = []): string[] {
@@ -148,6 +176,14 @@ export const useAgentStore = create<AgentStore>()(
       dangerousMode: false,
       selectedProvider: 'claude',
       viewingFile: null,
+
+      isGitRepo: false,
+      gitBranch: '',
+      gitStatus: [],
+      gitLog: [],
+      isGitPanelOpen: false,
+      gitRepos: [],
+      activeGitRepoPath: null,
 
       setAgents: (agents) => {
         // Auto-remove completed/error agents after 30 seconds
@@ -336,6 +372,50 @@ export const useAgentStore = create<AgentStore>()(
       },
 
       setProcesses: (processes) => set({ processes }),
+
+      refreshGitStatus: async () => {
+        try {
+          const res = await fetch('/api/git/status');
+          if (res.ok) {
+            const data = await res.json();
+            set({
+              isGitRepo: data.isRepo,
+              gitBranch: data.branch || '',
+              gitStatus: data.files || []
+            });
+          }
+        } catch (err) {
+          console.error('Failed to fetch git status', err);
+        }
+      },
+
+      refreshGitLog: async () => {
+        try {
+          const res = await fetch('/api/git/log');
+          if (res.ok) {
+            const data = await res.json();
+            set({ gitLog: Array.isArray(data) ? data : [] });
+          }
+        } catch (err) {
+          console.error('Failed to fetch git log', err);
+        }
+      },
+
+      setGitPanelOpen: (isOpen) => set({ isGitPanelOpen: isOpen }),
+
+      setActiveGitRepoPath: (repoPath) => set({ activeGitRepoPath: repoPath }),
+
+      discoverGitRepos: async (rootPath) => {
+        try {
+          const res = await fetch(`/api/git/find-repos?root=${encodeURIComponent(rootPath)}`);
+          if (res.ok) {
+            const repos = await res.json();
+            set({ gitRepos: Array.isArray(repos) ? repos : [] });
+          }
+        } catch (err) {
+          console.error('Failed to discover git repos', err);
+        }
+      },
     }),
     {
       name: STORAGE_KEY,

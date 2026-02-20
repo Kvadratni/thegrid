@@ -9,6 +9,7 @@ import FileCrumble from './effects/FileCrumble';
 import FileRise from './effects/FileRise';
 import ProcessIndicator from './effects/ProcessIndicator';
 import HologramViewer from './HologramViewer';
+import GitEngine from './GitEngine';
 
 interface FileSystemProps {
   node: FileSystemNode;
@@ -71,6 +72,10 @@ function Building({ layout, parentX = 0, parentZ = 0, isRoot = false }: { layout
   const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
   const setViewingFile = useAgentStore((state) => state.setViewingFile);
   const viewingFile = useAgentStore((state) => state.viewingFile);
+  const gitStatus = useAgentStore((state) => state.gitStatus);
+  const gitRepos = useAgentStore((state) => state.gitRepos);
+  const setActiveGitRepoPath = useAgentStore((state) => state.setActiveGitRepoPath);
+  const setGitPanelOpen = useAgentStore((state) => state.setGitPanelOpen);
   const camPos = useCameraPosition();
 
   const worldX = parentX + layout.x;
@@ -78,17 +83,25 @@ function Building({ layout, parentX = 0, parentZ = 0, isRoot = false }: { layout
 
   const isDirectory = layout.node.type === 'directory';
   // Root is white/light blue to match portal, other directories are cyan
-  const color = isRoot ? '#AADDFF' : isDirectory ? '#00FFFF' : getFileColor(layout.node.extension);
+  let color = isRoot ? '#AADDFF' : isDirectory ? '#00FFFF' : getFileColor(layout.node.extension);
   const height = isDirectory ? 0.3 : Math.max(1, Math.min(6, (layout.node.size || 1000) / 3000));
+
+  // Determine Git status color
+  const gitFileParams = gitStatus.find(s => layout.node.path.endsWith(s.path));
+  if (gitFileParams && !isDirectory) {
+    if (gitFileParams.status === 'modified') color = '#FFFF00';
+    if (gitFileParams.status === 'untracked' || gitFileParams.status === 'added') color = '#00FF00';
+  }
 
   const darkMaterial = useMemo(() => {
     return new THREE.MeshStandardMaterial({
-      color: '#0a0a12',
-      emissive: '#000000',
+      color: gitFileParams && !isDirectory ? color : '#0a0a12',
+      emissive: gitFileParams && !isDirectory ? color : '#000000',
+      emissiveIntensity: gitFileParams && !isDirectory ? 0.4 : 0,
       transparent: true,
-      opacity: 0.85,
+      opacity: gitFileParams && !isDirectory ? 0.95 : 0.85,
     });
-  }, []);
+  }, [gitFileParams, isDirectory, color]);
 
   const geometry = useMemo(() => {
     if (isDirectory) {
@@ -149,6 +162,19 @@ function Building({ layout, parentX = 0, parentZ = 0, isRoot = false }: { layout
       >
         <lineBasicMaterial color={color} transparent opacity={0.8} />
       </lineSegments>
+
+      {/* Git Repo Crystal — only for directories that are known git repos */}
+      {isDirectory && gitRepos.includes(layout.node.path) && (
+        <GitEngine
+          position={[0, 5, 0]}
+          scale={0.8}
+          repoPath={layout.node.path}
+          onOpen={() => {
+            setActiveGitRepoPath(layout.node.path);
+            setGitPanelOpen(true);
+          }}
+        />
+      )}
 
       {!isDirectory && (
         <mesh position={[0, height + 0.05, 0]}>

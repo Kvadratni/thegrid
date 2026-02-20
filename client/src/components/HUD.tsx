@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAgentStore, AgentEvent, AgentProvider } from '../stores/agentStore';
+import GitControlPanel from './GitControlPanel';
 
 function isDirectory(path: string, fileSystem: import('../stores/agentStore').FileSystemNode | null): boolean {
   if (!fileSystem) return false;
@@ -648,6 +649,18 @@ export default function HUD() {
   const allEventsCount = useAgentStore((state) => state.allEvents.length);
   const dangerousMode = useAgentStore((state) => state.dangerousMode);
   const setDangerousMode = useAgentStore((state) => state.setDangerousMode);
+  const refreshGitStatus = useAgentStore((state) => state.refreshGitStatus);
+  const refreshGitLog = useAgentStore((state) => state.refreshGitLog);
+  const isGitPanelOpen = useAgentStore((state) => state.isGitPanelOpen);
+  const setGitPanelOpen = useAgentStore((state) => state.setGitPanelOpen);
+  const discoverGitRepos = useAgentStore((state) => state.discoverGitRepos);
+
+  // Initial Git fetch and repo discovery on load
+  useEffect(() => {
+    refreshGitStatus();
+    refreshGitLog();
+    if (currentPath) discoverGitRepos(currentPath);
+  }, [refreshGitStatus, refreshGitLog, discoverGitRepos, currentPath]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1295,6 +1308,10 @@ export default function HUD() {
 
       {showNavigator && (
         <FilesystemNavigator onClose={() => setShowNavigator(false)} />
+      )}
+
+      {isGitPanelOpen && (
+        <GitControlPanel onClose={() => setGitPanelOpen(false)} />
       )}
     </div>
   );
