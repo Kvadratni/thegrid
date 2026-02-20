@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAgentStore } from '../stores/agentStore';
 
 interface Props { onClose: () => void }
@@ -15,6 +15,37 @@ export default function GitControlPanel({ onClose }: Props) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+
+    // Draggable window state
+    const [position, setPosition] = useState({ x: window.innerWidth - 500, y: 60 });
+    const isDragging = useRef(false);
+    const dragStart = useRef({ x: 0, y: 0, windowX: 0, windowY: 0 });
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        isDragging.current = true;
+        dragStart.current = {
+            x: e.clientX,
+            y: e.clientY,
+            windowX: position.x,
+            windowY: position.y
+        };
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!isDragging.current) return;
+        const dx = e.clientX - dragStart.current.x;
+        const dy = e.clientY - dragStart.current.y;
+        setPosition({
+            x: dragStart.current.windowX + dx,
+            y: dragStart.current.windowY + dy
+        });
+    };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        isDragging.current = false;
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    };
 
     const pathParam = activeGitRepoPath ? `?path=${encodeURIComponent(activeGitRepoPath)}` : '';
     const repoLabel = activeGitRepoPath ? activeGitRepoPath.split('/').pop() : 'workspace';
@@ -77,8 +108,7 @@ export default function GitControlPanel({ onClose }: Props) {
 
     return (
         <div style={{
-            position: 'fixed', top: '50%', left: '50%',
-            transform: 'translate(-50%, -50%)',
+            position: 'fixed', top: `${position.y}px`, left: `${position.x}px`,
             width: '480px', maxHeight: '80vh',
             background: 'rgba(0, 5, 20, 0.97)',
             border: '1px solid #00FFFF', borderRadius: '8px',
@@ -86,12 +116,20 @@ export default function GitControlPanel({ onClose }: Props) {
             display: 'flex', flexDirection: 'column',
             boxShadow: '0 0 40px rgba(0, 255, 255, 0.25), inset 0 0 60px rgba(0, 0, 30, 0.5)',
         }}>
-            {/* Header */}
-            <div style={{
-                padding: '12px 16px', borderBottom: '1px solid rgba(0,255,255,0.2)',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                background: 'rgba(0,255,255,0.05)',
-            }}>
+            {/* Header (Draggable Handle) */}
+            <div
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                style={{
+                    padding: '12px 16px', borderBottom: '1px solid rgba(0,255,255,0.2)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: 'rgba(0,255,255,0.05)',
+                    cursor: 'grab',
+                    userSelect: 'none',
+                    touchAction: 'none'
+                }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00FF88', boxShadow: '0 0 6px #00FF88' }} />
                     <span style={{ color: '#00FFFF', fontWeight: 'bold', letterSpacing: '0.15em', fontSize: '12px' }}>SOURCE CONTROL</span>
