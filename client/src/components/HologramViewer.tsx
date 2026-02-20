@@ -1,7 +1,9 @@
-import { useState, useEffect, Suspense, useRef } from 'react';
+import { useState, useEffect, Suspense, useRef, useMemo } from 'react';
 import { Html, useGLTF, Stage, Billboard } from '@react-three/drei';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
+import { STLLoader } from 'three-stdlib';
+import { OBJLoader } from 'three-stdlib';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAgentStore } from '../stores/agentStore';
@@ -14,7 +16,7 @@ interface HologramViewerProps {
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'avif']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus']);
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v']);
-const MODEL_EXTS = new Set(['glb', 'gltf']);
+const MODEL_EXTS = new Set(['glb', 'gltf', 'obj', 'stl']);
 
 function highlightLine(line: string, ext: string): React.ReactNode {
     if (/^\s*(\/\/|#|--|\/\*)/.test(line)) return <span style={{ color: '#666' }}>{line}</span>;
@@ -24,22 +26,46 @@ function highlightLine(line: string, ext: string): React.ReactNode {
     return <span style={{ color: '#CCC' }}>{line}</span>;
 }
 
-function ModelHologram({ url }: { url: string }) {
-    const { scene } = useGLTF(url);
+function ModelHologram({ url, ext }: { url: string; ext: string }) {
     const ref = useRef<THREE.Group>(null);
 
-    // Slowly rotate the model like a hologram
+    // GLTF/GLB
+    const gltf = ext === 'gltf' || ext === 'glb' ? useGLTF(url) : null;
+
+    // STL
+    const stl = ext === 'stl' ? useLoader(STLLoader as any, url) : null;
+    const stlMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: '#AADDFF', metalness: 0.5, roughness: 0.2 }), []);
+
+    // OBJ (without MTL for simplicity, just assigning a basic material)
+    const obj = ext === 'obj' ? useLoader(OBJLoader as any, url) : null;
+    const objMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: '#FFF' }), []);
+
     useFrame((_, delta) => {
         if (ref.current) {
             ref.current.rotation.y += delta * 0.5;
         }
     });
 
-    return (
+    if (gltf) return <group ref={ref}><primitive object={gltf.scene} /></group>;
+
+    if (stl) return (
         <group ref={ref}>
-            <primitive object={scene} />
+            <mesh geometry={stl as any} material={stlMaterial} />
         </group>
     );
+
+    if (obj) {
+        // Apply default material to OBJ children
+        const objGroup = obj as THREE.Group;
+        objGroup.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+                child.material = objMaterial;
+            }
+        });
+        return <group ref={ref}><primitive object={objGroup} /></group>;
+    }
+
+    return null;
 }
 
 export default function HologramViewer({ filePath, height }: HologramViewerProps) {
@@ -92,7 +118,7 @@ export default function HologramViewer({ filePath, height }: HologramViewerProps
     if (isModel && mediaUrl && !loading) {
         return (
             <Billboard position={[0, height + 4, 0]}>
-                <group scale={[1.5, 1.5, 1.5]}>
+                <group scale={[0.25, 0.25, 0.25]}>
                     <pointLight intensity={2} color="#00ffff" distance={5} />
                     {/* Hologram scanline box effect */}
                     <mesh>
@@ -101,7 +127,7 @@ export default function HologramViewer({ filePath, height }: HologramViewerProps
                     </mesh>
                     <Suspense fallback={null}>
                         <Stage environment="city" intensity={0.5} adjustCamera={false}>
-                            <ModelHologram url={mediaUrl} />
+                            <ModelHologram url={mediaUrl} ext={ext} />
                         </Stage>
                     </Suspense>
                     {/* Close button for 3D model */}

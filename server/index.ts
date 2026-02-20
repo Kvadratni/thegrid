@@ -327,7 +327,7 @@ app.get('/api/filesystem/:encodedPath(*)', async (req, res) => {
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'avif']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus']);
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v']);
-const MODEL_EXTS = new Set(['glb', 'gltf']);
+const MODEL_EXTS = new Set(['glb', 'gltf', 'obj', 'stl', 'mtl']);
 const TEXT_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'json', 'md', 'txt', 'css', 'scss', 'html', 'yaml', 'yml', 'sh', 'bash', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 'toml', 'env', 'gitignore', 'lock', 'xml', 'svg', 'sql', 'graphql', 'vue', 'svelte', 'astro', 'conf', 'ini', 'log']);
 
 const MIME_MAP: Record<string, string> = {
@@ -343,6 +343,7 @@ const MIME_MAP: Record<string, string> = {
   avi: 'video/x-msvideo', mkv: 'video/x-matroska', m4v: 'video/mp4',
   // 3D Models
   glb: 'model/gltf-binary', gltf: 'model/gltf+json',
+  obj: 'text/plain', stl: 'model/stl', mtl: 'text/plain',
 };
 
 app.get('/api/file/:encodedPath(*)', async (req, res) => {
