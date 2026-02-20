@@ -110,7 +110,7 @@ interface AgentStore {
   gitRepos: string[];          // discovered repo root paths
   activeGitRepoPath: string | null;
   gitAheadCount: number;       // number of unpushed commits on the active branch
-  gitAnimations: { repoPath: string; type: 'commit' | 'push' | 'pull'; timestamp: number }[];
+  gitAnimations: { repoPath: string; type: 'commit' | 'push' | 'pull' | 'checkout'; timestamp: number }[];
 
   setAgents: (agents: AgentState[]) => void;
   setFileSystem: (fs: FileSystemNode) => void;
@@ -141,7 +141,7 @@ interface AgentStore {
   setGitPanelOpen: (isOpen: boolean) => void;
   setActiveGitRepoPath: (repoPath: string | null) => void;
   discoverGitRepos: (rootPath: string) => Promise<void>;
-  triggerGitAnimation: (repoPath: string, type: 'commit' | 'push' | 'pull') => void;
+  triggerGitAnimation: (repoPath: string, type: 'commit' | 'push' | 'pull' | 'checkout') => void;
   removeGitAnimation: (timestamp: number) => void;
 }
 

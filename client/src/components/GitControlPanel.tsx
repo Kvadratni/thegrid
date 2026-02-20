@@ -9,6 +9,8 @@ export default function GitControlPanel({ onClose }: Props) {
     const triggerGitAnimation = useAgentStore(state => state.triggerGitAnimation);
 
     const [gitBranch, setGitBranch] = useState('');
+    const [gitBranches, setGitBranches] = useState<string[]>([]);
+    const [newBranchName, setNewBranchName] = useState('');
     const [gitStatus, setGitStatus] = useState<Array<{ path: string; status: string }>>([]);
     const [gitLog, setGitLog] = useState<Array<{ hash: string; message: string; author: string; date: string }>>([]);
     const [commitMsg, setCommitMsg] = useState('');
@@ -68,9 +70,20 @@ export default function GitControlPanel({ onClose }: Props) {
         } catch { }
     };
 
+    const fetchBranches = async () => {
+        try {
+            const res = await fetch(`/api/git/branches${pathParam}`);
+            if (res.ok) {
+                const data = await res.json();
+                setGitBranches(data.branches || []);
+            }
+        } catch { }
+    };
+
     useEffect(() => {
         fetchStatus();
         fetchLog();
+        fetchBranches();
     }, [activeGitRepoPath]);
 
     const run = async (action: string, body?: object) => {
@@ -87,6 +100,29 @@ export default function GitControlPanel({ onClose }: Props) {
             if (activeGitRepoPath) triggerGitAnimation(activeGitRepoPath, action as 'commit' | 'push' | 'pull');
             fetchStatus();
             fetchLog();
+        } catch (e: any) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const runCheckout = async (targetBranch: string, createNew: boolean = false) => {
+        setLoading(true); setError(null); setSuccess(null);
+        try {
+            const res = await fetch(`/api/git/checkout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ branch: targetBranch, createNew, path: activeGitRepoPath }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Checkout failed');
+            setSuccess(`Switched to branch '${targetBranch}'`);
+            if (activeGitRepoPath) triggerGitAnimation(activeGitRepoPath, 'checkout');
+            if (createNew) setNewBranchName('');
+            fetchStatus();
+            fetchLog();
+            fetchBranches();
         } catch (e: any) {
             setError(e.message);
         } finally {
@@ -136,7 +172,24 @@ export default function GitControlPanel({ onClose }: Props) {
                     <span style={{ fontSize: '11px', color: '#446', padding: '1px 6px', background: 'rgba(0,255,255,0.06)', borderRadius: '3px' }}>{repoLabel}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '11px', padding: '2px 8px', border: '1px solid rgba(0,255,255,0.3)', borderRadius: '4px', color: '#88DDFF' }}>⎇ {gitBranch || '…'}</span>
+                    <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: '#88DDFF', fontSize: '11px', pointerEvents: 'none' }}>⎇</span>
+                        <select
+                            value={gitBranch}
+                            onChange={e => runCheckout(e.target.value)}
+                            disabled={loading}
+                            style={{
+                                maxWidth: '160px', appearance: 'none', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,255,255,0.3)',
+                                borderRadius: '4px', color: '#88DDFF', fontSize: '11px', padding: '2px 20px 2px 24px',
+                                fontFamily: 'monospace', cursor: 'pointer', outline: 'none',
+                                textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden'
+                            }}
+                        >
+                            {gitBranches.map(b => (
+                                <option key={b} value={b}>{b}</option>
+                            ))}
+                        </select>
+                    </div>
                     <button onClick={handleClose} style={{ background: 'none', border: 'none', color: '#00FFFF', cursor: 'pointer', fontSize: '16px' }}>✕</button>
                 </div>
             </div>
@@ -161,6 +214,32 @@ export default function GitControlPanel({ onClose }: Props) {
                                 </div>
                             ))
                         }
+                    </div>
+                </div>
+
+                {/* Create Branch */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <span style={{ fontSize: '10px', letterSpacing: '0.1em', color: 'rgba(0,255,255,0.6)', textTransform: 'uppercase' }}>Create Branch</span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                            value={newBranchName}
+                            onChange={e => setNewBranchName(e.target.value)}
+                            placeholder="New local branch name..."
+                            onKeyDown={e => e.key === 'Enter' && newBranchName && runCheckout(newBranchName, true)}
+                            style={{
+                                flex: 1, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(0,255,255,0.3)', borderRadius: '4px',
+                                color: '#FFF', padding: '8px 12px', fontSize: '12px', fontFamily: 'monospace', outline: 'none'
+                            }}
+                        />
+                        <button
+                            onClick={() => { if (newBranchName) runCheckout(newBranchName, true); }}
+                            disabled={loading || !newBranchName}
+                            style={{
+                                padding: '8px 16px', background: 'rgba(0,255,255,0.08)', border: '1px solid rgba(0,255,255,0.3)',
+                                borderRadius: '4px', color: '#00FFFF', cursor: 'pointer', fontSize: '12px', fontFamily: 'monospace',
+                                opacity: !newBranchName ? 0.4 : 1, transition: 'all 0.2s',
+                            }}
+                        >Create</button>
                     </div>
                 </div>
 

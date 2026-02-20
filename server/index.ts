@@ -439,6 +439,27 @@ app.get('/api/git/find-repos', async (req, res) => {
   }
 });
 
+app.get('/api/git/branches', async (req, res) => {
+  try {
+    const dirPath = req.query.path as string | undefined;
+    const branches = await git.getBranches(dirPath);
+    res.json({ branches });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.post('/api/git/checkout', async (req, res) => {
+  try {
+    const { branch, createNew, path: dirPath } = req.body;
+    if (!branch) return res.status(400).json({ error: 'Branch name required' });
+    const result = await git.checkoutBranch(branch, createNew, dirPath);
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 app.get('/api/git/status', async (req, res) => {
   try {
     const dirPath = req.query.path as string | undefined;

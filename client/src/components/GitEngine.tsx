@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
+import { Text, Billboard } from '@react-three/drei';
 import { useAgentStore } from '../stores/agentStore';
 
 interface GitEngineProps {
@@ -20,15 +21,17 @@ export default function GitEngine({ position = [0, 0, 0], scale = 1, repoPath, o
 
     const [isDirty, setIsDirty] = useState(false);
     const [aheadCount, setAheadCount] = useState(0);
+    const [branch, setBranch] = useState('');
 
     const groupRef = useRef<THREE.Group>(null);
     const crystalRef = useRef<THREE.Mesh>(null);
     const ringRef = useRef<THREE.Mesh>(null);
 
     // Animation states
-    const effectState = useRef<{ type: 'commit' | 'push' | 'pull' | null; start: number }>({ type: null, start: 0 });
+    const effectState = useRef<{ type: 'commit' | 'push' | 'pull' | 'checkout' | null; start: number }>({ type: null, start: 0 });
     const beamRef = useRef<THREE.Mesh>(null);
     const beamMatRef = useRef<THREE.MeshStandardMaterial>(null);
+    const textRef = useRef<any>(null);
 
     const fetchLocalStatus = async () => {
         if (!repoPath) return;
@@ -38,6 +41,7 @@ export default function GitEngine({ position = [0, 0, 0], scale = 1, repoPath, o
                 const data = await res.json();
                 setIsDirty(data.files && data.files.length > 0);
                 setAheadCount(data.aheadCount || 0);
+                setBranch(data.branch || '');
             }
         } catch { }
     };
@@ -92,6 +96,14 @@ export default function GitEngine({ position = [0, 0, 0], scale = 1, repoPath, o
             }
         }
 
+        // Fast spin for checkout
+        if (ringRef.current && effectState.current.type === 'checkout') {
+            const elapsed = (Date.now() - effectState.current.start) / 1000;
+            if (elapsed < 1.0) {
+                ringRef.current.rotation.y += delta * 15; // very fast spin
+            }
+        }
+
         // Beam effect for Push / Pull
         if (beamRef.current && beamMatRef.current) {
             const elapsed = (Date.now() - effectState.current.start) / 1000;
@@ -106,8 +118,12 @@ export default function GitEngine({ position = [0, 0, 0], scale = 1, repoPath, o
                 beamRef.current.position.y = offset;
             } else if (effectState.current.type && elapsed >= 2.0) {
                 beamRef.current.visible = false;
-                effectState.current.type = null;
+                if (effectState.current.type !== 'checkout') effectState.current.type = null;
             }
+        }
+
+        if (textRef.current) {
+            textRef.current.position.y = Math.sin(time * 2.0) * 0.05;
         }
     });
 
@@ -133,11 +149,23 @@ export default function GitEngine({ position = [0, 0, 0], scale = 1, repoPath, o
                 <meshStandardMaterial ref={beamMatRef} color="#00FF00" emissive="#00FF00" emissiveIntensity={2} transparent opacity={0} depthWrite={false} />
             </mesh>
 
-            {/* Base Pedestal */}
-            <mesh position={[0, -0.4, 0]}>
-                <cylinderGeometry args={[0.8, 1.0, 0.3, 8]} />
-                <meshStandardMaterial color="#0a0a12" metalness={0.9} roughness={0.15} />
-            </mesh>
+            {/* Floating Branch Label */}
+            {branch && (
+                <Billboard position={[0, 1.6, 0]}>
+                    <Text
+                        ref={textRef}
+                        position={[0, 0, 0]}
+                        fontSize={0.25}
+                        color="#00FFFF"
+                        anchorX="center"
+                        anchorY="middle"
+                        outlineWidth={0.02}
+                        outlineColor="#000000"
+                    >
+                        ⎇ {branch}
+                    </Text>
+                </Billboard>
+            )}
 
             {/* Main Crystal */}
             <mesh

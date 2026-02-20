@@ -143,6 +143,40 @@ export async function pullChanges(dirPath?: string): Promise<string> {
     return await runGit(`pull origin ${branch}`, dir);
 }
 
+export async function getBranches(dirPath?: string): Promise<string[]> {
+    const dir = dirPath || getWorkspaceDir();
+    const output = await runGit('branch --all --format="%(refname:short)"', dir);
+    const lines = output.split('\n').filter(Boolean);
+
+    const local = new Set<string>();
+    const remotes = new Set<string>();
+    for (const l of lines) {
+        if (l.startsWith('origin/')) {
+            const name = l.replace('origin/', '');
+            if (name !== 'HEAD') remotes.add(name);
+        } else {
+            local.add(l);
+        }
+    }
+
+    const finalBranches = Array.from(local);
+    for (const r of remotes) {
+        if (!local.has(r)) finalBranches.push(`origin/${r}`);
+    }
+    return finalBranches;
+}
+
+export async function checkoutBranch(branch: string, createNew: boolean = false, dirPath?: string): Promise<string> {
+    const dir = dirPath || getWorkspaceDir();
+    if (createNew) {
+        return await runGit(`checkout -b ${branch}`, dir);
+    }
+    if (branch.startsWith('origin/')) {
+        return await runGit(`checkout -t ${branch}`, dir);
+    }
+    return await runGit(`checkout ${branch}`, dir);
+}
+
 // Discover all git repos under a given root directory (max 4 levels deep)
 export async function findGitRepos(rootPath: string): Promise<string[]> {
     try {
