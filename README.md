@@ -16,6 +16,18 @@ A 3D Tron-inspired visualization of AI agent activity. Watch agents from **Claud
   - Task: Orange particle burst for spawning
 - **File Animations** - Files rise from the ground when created, crumble when deleted
 - **Process Visualization** - Floating indicators show running services (Node.js, Python, Vite, etc.)
+- **Git Crystal Engine** - Per-repository floating crystals with real-time status:
+  - Crystal glows **cyan** when clean, **yellow** when dirty (uncommitted changes)
+  - **Orbiting green orbs** show unpushed commit count
+  - **Floating billboard label** displays current branch name (always faces camera)
+  - Animated effects on commit (swell), push/pull (beam + spin), and checkout (fast spin)
+- **Source Control Panel** - Draggable HUD for full Git operations:
+  - Branch dropdown with local + remote branches
+  - Create new branches inline
+  - Commit, push, and pull with one click
+  - Changed files list with color-coded status indicators
+  - Recent commit log
+- **Multi-Repo Detection** - Auto-discovers all Git repositories under the workspace
 - **Event Logging** - Full activity log with persistence across refreshes
 - **Dangerous Mode** - Toggle to allow agents to bypass permission prompts
 
@@ -96,6 +108,7 @@ Add to `~/.claude/settings.json`:
 | Navigate Directories | Click on directory buildings |
 | Teleport to Origin | Press `O` or click origin button |
 | Search Files | Use search bar in HUD |
+| Open Source Control | Click on a Git crystal |
 
 ## HUD Features
 
@@ -104,6 +117,7 @@ Add to `~/.claude/settings.json`:
 - **Spawn Agent** - Launch new Claude agents with custom prompts
 - **Dangerous Mode Toggle** - Enable/disable permission bypass
 - **Directory Navigation** - Change the visualized directory
+- **Source Control Panel** - Draggable Git panel with branch switching, commit, push/pull, and new branch creation
 
 ## Visual Legend
 
@@ -121,6 +135,10 @@ Add to `~/.claude/settings.json`:
 | Config Files | Yellow | .json, .yaml, .toml, etc. |
 | Documentation | Magenta | .md, .txt, .rst, etc. |
 | Running Process | Varies by type | Floating cube above directory |
+| Git Crystal (clean) | Cyan (#00FFFF) | No uncommitted changes |
+| Git Crystal (dirty) | Yellow (#FFFF00) | Uncommitted changes present |
+| Git Orbs | Green (#00FF88) | Each orb = one unpushed commit |
+| Branch Label | Cyan | Floating billboard text above crystal |
 
 ## Tech Stack
 
@@ -136,7 +154,8 @@ Add to `~/.claude/settings.json`:
 ```
 thegrid/
 ├── server/                    # WebSocket bridge server
-│   ├── index.ts              # Express + WebSocket server
+│   ├── index.ts              # Express + WebSocket + Git API server
+│   ├── git.ts                # Git operations (status, branch, checkout, push/pull)
 │   ├── providers.ts          # Agent provider configs & stream parsers
 │   └── types.ts              # TypeScript interfaces
 ├── client/                    # React + Three.js frontend
@@ -145,6 +164,8 @@ thegrid/
 │   │   │   ├── TronScene.tsx      # Main 3D scene
 │   │   │   ├── FileSystem.tsx     # Directory/file visualization
 │   │   │   ├── LightCycle.tsx     # Agent representation (provider-branded)
+│   │   │   ├── GitEngine.tsx      # 3D Git crystal per repository
+│   │   │   ├── GitControlPanel.tsx # Draggable source control HUD
 │   │   │   ├── HUD.tsx            # 2D overlay w/ provider selector
 │   │   │   └── effects/           # Visual effect components
 │   │   ├── hooks/
