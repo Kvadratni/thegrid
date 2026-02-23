@@ -1,9 +1,35 @@
 import { useState } from 'react';
 import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Terminal, Box, GitBranch, Cpu, Github, ExternalLink } from 'lucide-react';
+import { Terminal, Box, GitBranch, Cpu, Github, ExternalLink, Zap, Shield, Layers, Monitor, Keyboard, Palette } from 'lucide-react';
 import './index.css';
 
 // ─── Content ──────────────────────────────────────────────────────────────────
+
+const PROVIDERS = [
+  { name: 'Claude Code', color: '#00FFFF', icon: '●', install: 'npm i -g @zed-industries/claude-agent-acp', native: false, link: 'https://docs.anthropic.com/en/docs/agents-and-tools/claude-code' },
+  { name: 'Gemini CLI', color: '#4285F4', icon: '◆', install: 'Built-in (--experimental-acp)', native: true, link: 'https://github.com/google-gemini/gemini-cli' },
+  { name: 'Codex CLI', color: '#10A37F', icon: '■', install: 'npm i -g @zed-industries/codex-acp', native: false, link: 'https://github.com/openai/codex' },
+  { name: 'Goose', color: '#FF6600', icon: '▲', install: 'Built-in (goose acp)', native: true, link: 'https://block.github.io/goose/' },
+  { name: 'Kilocode', color: '#E91E63', icon: '◎', install: 'npm i -g kilo-acp', native: false, link: 'https://github.com/Kvadratni/kilo-acp' },
+  { name: 'OpenCode', color: '#76FF03', icon: '⬡', install: 'Built-in', native: true, link: null },
+  { name: 'Kimi CLI', color: '#FF4081', icon: '✦', install: 'Built-in', native: true, link: null },
+  { name: 'Aider', color: '#FF5252', icon: '▼', install: 'pip install aider-chat', native: false, link: 'https://aider.chat' },
+  { name: 'Cline', color: '#009688', icon: '◇', install: 'VS Code extension', native: false, link: null },
+  { name: 'Augment', color: '#3F51B5', icon: '◈', install: 'CLI tool', native: false, link: null },
+  { name: 'Qwen Code', color: '#FFC107', icon: '◉', install: 'CLI tool', native: false, link: null },
+  { name: 'GitHub Copilot', color: '#56B6C2', icon: '◆', install: 'CLI tool', native: false, link: null },
+];
+
+const TOOL_EFFECTS = [
+  { tool: 'Bash', color: '#00FF88', description: 'Green binary digits (0/1) floating upward' },
+  { tool: 'Read', color: '#4285F4', description: 'Blue scanning lines sweeping down the file' },
+  { tool: 'Write', color: '#FFFFFF', description: 'White pages floating outward from the building' },
+  { tool: 'Edit', color: '#FFFF00', description: 'Yellow/red +/- diff symbols animating around the file' },
+  { tool: 'Grep/Glob', color: '#00FFFF', description: 'Cyan radar pulse rings expanding from the search location' },
+  { tool: 'Task', color: '#FF6600', description: 'Orange particle burst for spawning subagents' },
+  { tool: 'Delete', color: '#FF0000', description: 'Red explosion with crumbling fragments and physics particles' },
+  { tool: 'Create', color: '#00FF00', description: 'Green file rising from the ground with a glow effect' },
+];
 
 function Navbar() {
   const location = useLocation();
@@ -17,6 +43,7 @@ function Navbar() {
         <div className="nav-links">
           <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>Home</Link>
           <Link to="/docs" className={`nav-link ${location.pathname === '/docs' ? 'active' : ''}`}>Docs</Link>
+          <Link to="/providers" className={`nav-link ${location.pathname === '/providers' ? 'active' : ''}`}>Providers</Link>
           <a href="https://github.com/Kvadratni/thegrid" target="_blank" rel="noopener noreferrer" className="nav-link" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             GitHub <ExternalLink size={14} />
           </a>
@@ -33,8 +60,8 @@ function LandingPage() {
     <div className="pt-nav">
       {/* Hero Section */}
       <section className="section hero container">
-        <h1 className="text-gradient mono">AGENT ORCHESTRATION VISUALIZER</h1>
-        <p>A 3D Tron-inspired visualization of AI agent activity. Watch agents navigate your codebase as light cycles on neon highways, with real-time visual effects.</p>
+        <h1 className="text-gradient mono">THE GRID</h1>
+        <p className="hero-subtitle">A 3D Tron-inspired visualization environment for AI agent orchestration. Watch agents navigate your codebase as light cycles on neon highways, with real-time visual effects for every action.</p>
 
         <div className="hero-actions">
           <Link to="/docs" className="btn btn-primary">
@@ -46,68 +73,148 @@ function LandingPage() {
         </div>
 
         <div className="video-wrapper">
-          <img
-            src={`/thegrid/demo.webp`}
-            alt="The Grid Agent Orchestration Demo"
-            className="clickable-image"
-            onClick={() => setSelectedImage('/thegrid/demo.webp')}
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            src={`${import.meta.env.BASE_URL}grid-demo.mp4`}
             style={{ width: '100%', display: 'block' }}
           />
           <div className="video-overlay"></div>
         </div>
       </section>
 
+      {/* Stats Bar */}
+      <section className="container" style={{ padding: '2rem 2rem 0' }}>
+        <div className="stats-bar">
+          <div className="stat-item">
+            <span className="stat-value mono text-gradient">13+</span>
+            <span className="stat-label">Supported Agents</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-value mono text-gradient">8</span>
+            <span className="stat-label">Tool Animations</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-value mono text-gradient">ACP</span>
+            <span className="stat-label">Protocol Native</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-value mono text-gradient">3D</span>
+            <span className="stat-label">Real-Time Engine</span>
+          </div>
+        </div>
+      </section>
+
       {/* Features Section */}
       <section className="section container">
         <h2 className="text-gradient mono" style={{ textAlign: 'center', fontSize: '2.5rem', marginBottom: '1rem' }}>SYSTEM_CAPABILITIES</h2>
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginBottom: '3rem', maxWidth: '700px', marginLeft: 'auto', marginRight: 'auto' }}>
+          Every feature is designed to give you deep visibility into what your AI agents are doing, in real-time, in 3D.
+        </p>
         <div className="features-grid">
 
           <div className="glass-panel feature-card">
             <div className="feature-icon"><Box size={24} /></div>
             <h3 className="mono">3D File System</h3>
-            <p>Directories map to neon road networks while files rise as glowing buildings. Real-time file creation and deletion animations.</p>
+            <p>Directories map to neon road networks. Files rise as glowing buildings, color-coded by type. Navigate your entire codebase spatially.</p>
             <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
-              <img src="/thegrid/img/filesystem.png" alt="3D File System" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/filesystem.png')} style={{ width: '100%', display: 'block' }} />
+              <img src={`${import.meta.env.BASE_URL}img/filesystem.png`} alt="3D File System" className="clickable-image" onClick={() => setSelectedImage(`${import.meta.env.BASE_URL}img/filesystem.png`)} style={{ width: '100%', display: 'block' }} />
             </div>
           </div>
 
           <div className="glass-panel feature-card">
             <div className="feature-icon"><Cpu size={24} /></div>
             <h3 className="mono">ACP-First Protocol</h3>
-            <p>Pre-configured to securely run 13+ <a href="#/docs" style={{ color: 'var(--neon-cyan)' }}>ACP-enabled agents</a> including Claude, Kilo, and Gemini. Auto-detection ensures optimal connection.</p>
+            <p>Pre-configured to securely run 13+ <Link to="/providers" style={{ color: 'var(--neon-cyan)' }}>ACP-enabled agents</Link> including Claude, Gemini, Codex, Goose, Kilocode, and more. Auto-detection ensures optimal connection.</p>
             <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
-              <img src="/thegrid/img/agent.png" alt="ACP-First Protocol HUD" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/agent.png')} style={{ width: '100%', display: 'block' }} />
+              <img src={`${import.meta.env.BASE_URL}img/agent.png`} alt="ACP-First Protocol HUD" className="clickable-image" onClick={() => setSelectedImage(`${import.meta.env.BASE_URL}img/agent.png`)} style={{ width: '100%', display: 'block' }} />
             </div>
           </div>
 
           <div className="glass-panel feature-card">
             <div className="feature-icon"><Terminal size={24} /></div>
             <h3 className="mono">Running Processes</h3>
-            <p>Floating indicators dynamically appear above directories to show active services (Node.js, Python, Vite, etc.) in real-time, visualizing what is actually running on your grid.</p>
+            <p>Floating indicators dynamically appear above directories to show active services (Node.js, Python, Vite, etc.) in real-time — see what's running on your grid.</p>
             <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
-              <img src="/thegrid/img/running-process.png" alt="Running Process Indicator" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/running-process.png')} style={{ width: '100%', display: 'block' }} />
+              <img src={`${import.meta.env.BASE_URL}img/running-process.png`} alt="Running Process Indicator" className="clickable-image" onClick={() => setSelectedImage(`${import.meta.env.BASE_URL}img/running-process.png`)} style={{ width: '100%', display: 'block' }} />
             </div>
           </div>
 
           <div className="glass-panel feature-card">
             <div className="feature-icon"><GitBranch size={24} /></div>
             <h3 className="mono">Git Crystal Engine</h3>
-            <p>Per-repo floating crystals indicate cleanliness (cyan/yellow) with orbiting orbs for unpushed commits. Full source control HUD included.</p>
+            <p>Per-repo floating crystals glow cyan when clean, yellow when dirty. Orbiting green orbs count unpushed commits. Full source control HUD with branch switching, commit, push/pull.</p>
             <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
-              <img src="/thegrid/img/git.png" alt="Git Crystal" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/git.png')} style={{ width: '100%', display: 'block' }} />
+              <img src={`${import.meta.env.BASE_URL}img/git.png`} alt="Git Crystal" className="clickable-image" onClick={() => setSelectedImage(`${import.meta.env.BASE_URL}img/git.png`)} style={{ width: '100%', display: 'block' }} />
             </div>
           </div>
 
           <div className="glass-panel feature-card" style={{ gridColumn: '1 / -1' }}>
             <h3 className="mono text-gradient">File Previews</h3>
-            <p style={{ maxWidth: '800px', marginBottom: '1rem' }}>Click on any glowing file building to instantly access a rich, syntax-highlighted code preview without leaving the grid. See exactly what your agents are modifying in real-time.</p>
+            <p style={{ maxWidth: '800px', marginBottom: '1rem' }}>Click on any glowing file building to instantly access a rich, syntax-highlighted code preview. Supports text files, images, and even 3D models — all without leaving the grid.</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-              <img src="/thegrid/img/text-preview.png" alt="Text Preview" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/text-preview.png')} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
-              <img src="/thegrid/img/image-preview.png" alt="Image Preview" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/image-preview.png')} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
-              <img src="/thegrid/img/3dmodel-preview.png" alt="3D Model Preview" className="clickable-image" onClick={() => setSelectedImage('/thegrid/img/3dmodel-preview.png')} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
+              <img src={`${import.meta.env.BASE_URL}img/text-preview.png`} alt="Text Preview" className="clickable-image" onClick={() => setSelectedImage(`${import.meta.env.BASE_URL}img/text-preview.png`)} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
+              <img src={`${import.meta.env.BASE_URL}img/image-preview.png`} alt="Image Preview" className="clickable-image" onClick={() => setSelectedImage(`${import.meta.env.BASE_URL}img/image-preview.png`)} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
+              <img src={`${import.meta.env.BASE_URL}img/3dmodel-preview.png`} alt="3D Model Preview" className="clickable-image" onClick={() => setSelectedImage(`${import.meta.env.BASE_URL}img/3dmodel-preview.png`)} style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--neon-cyan-dim)', display: 'block' }} />
             </div>
           </div>
 
+        </div>
+      </section>
+
+      {/* Tool Effects Section */}
+      <section className="section container">
+        <h2 className="text-gradient mono" style={{ textAlign: 'center', fontSize: '2.5rem', marginBottom: '1rem' }}>TOOL_EFFECTS</h2>
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginBottom: '3rem', maxWidth: '700px', marginLeft: 'auto', marginRight: 'auto' }}>
+          Every tool call triggers a unique 3D animation at the exact file location, so you can see what your agents are doing at a glance.
+        </p>
+        <div className="effects-grid">
+          {TOOL_EFFECTS.map((effect) => (
+            <div key={effect.tool} className="glass-panel effect-card">
+              <div className="effect-indicator" style={{ background: effect.color, boxShadow: `0 0 12px ${effect.color}` }} />
+              <div>
+                <h4 className="mono" style={{ color: effect.color, marginBottom: '0.25rem' }}>{effect.tool}</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>{effect.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Agent Providers Preview */}
+      <section className="section container">
+        <h2 className="text-gradient mono" style={{ textAlign: 'center', fontSize: '2.5rem', marginBottom: '1rem' }}>SUPPORTED_AGENTS</h2>
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginBottom: '3rem', maxWidth: '600px', marginLeft: 'auto', marginRight: 'auto' }}>
+          13+ AI coding agents with automatic detection and provider-specific light cycle branding.
+        </p>
+        <div className="provider-pills">
+          {PROVIDERS.map((p) => (
+            <div key={p.name} className="provider-pill" style={{ borderColor: p.color, color: p.color }}>
+              <span className="mono" style={{ fontSize: '1.1rem' }}>{p.icon}</span>
+              <span>{p.name}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+          <Link to="/providers" className="btn btn-primary">
+            <Layers size={18} /> View All Providers
+          </Link>
+        </div>
+      </section>
+
+      {/* Architecture */}
+      <section className="section container">
+        <h2 className="text-gradient mono" style={{ textAlign: 'center', fontSize: '2.5rem', marginBottom: '2rem' }}>ARCHITECTURE</h2>
+        <div className="glass-panel" style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
+          <pre style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', lineHeight: '1.8', overflowX: 'auto' }}>{`
+┌─────────────────┐     Stdin/Stdout      ┌──────────────────┐    WebSocket     ┌─────────────────┐
+│  Claude / Gemini │ ◄──────────────────► │  Bridge Server   │ ◄──────────────► │   React + R3F   │
+│  Codex / Goose   │   ACP Binary Proto   │   (Node.js)      │    Real-time     │   3D Frontend   │
+│  Kilocode / ...  │                      │  + Providers     │    Events        │  + Provider UI  │
+└─────────────────┘                       └──────────────────┘                  └─────────────────┘
+          `}</pre>
         </div>
       </section>
 
@@ -122,6 +229,48 @@ function LandingPage() {
           <img src={selectedImage} alt="Enlarged view" className="lightbox-image" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
+    </div>
+  );
+}
+
+function ProvidersPage() {
+  return (
+    <div className="pt-nav container section">
+      <h1 className="text-gradient mono" style={{ textAlign: 'center', fontSize: '3rem', marginBottom: '0.5rem' }}>AGENT_REGISTRY</h1>
+      <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginBottom: '3rem', maxWidth: '700px', marginLeft: 'auto', marginRight: 'auto' }}>
+        The Grid supports all of these AI coding agents. Each one gets its own unique light cycle color and auto-detection on your system.
+      </p>
+
+      <div className="providers-grid">
+        {PROVIDERS.map((p) => (
+          <div key={p.name} className="glass-panel provider-card">
+            <div className="provider-header">
+              <span className="provider-icon mono" style={{ color: p.color, textShadow: `0 0 10px ${p.color}` }}>{p.icon}</span>
+              <h3 style={{ color: p.color }}>{p.name}</h3>
+            </div>
+            <div className="provider-color-bar" style={{ background: p.color }} />
+            <div className="provider-details">
+              <div className="provider-detail-row">
+                <span className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>INSTALL</span>
+                <code style={{ fontSize: '0.8rem', color: p.native ? 'var(--neon-green)' : 'var(--neon-magenta)' }}>
+                  {p.install}
+                </code>
+              </div>
+              <div className="provider-detail-row">
+                <span className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>TYPE</span>
+                <span style={{ fontSize: '0.85rem', color: p.native ? 'var(--neon-green)' : 'var(--neon-cyan)' }}>
+                  {p.native ? '✓ Native ACP' : 'ACP Adapter'}
+                </span>
+              </div>
+            </div>
+            {p.link && (
+              <a href={p.link} target="_blank" rel="noopener noreferrer" className="provider-link">
+                Documentation <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -155,18 +304,100 @@ cd server && npm run dev`}</code></pre>
           <h2>Agent Configuration</h2>
           <p>The Grid supports multiple AI agents via the <strong>Agent Client Protocol (ACP)</strong>. It will automatically detect installed adapter binaries on your <code>PATH</code>. Once an adapter is installed, launch an agent directly from The Grid's Provider Dropdown inside the HUD.</p>
 
-          <h3>Supported Agents & Setup</h3>
+          <h3>Installing ACP Adapters</h3>
+          <pre><code>{`# Claude Code (via Zed's adapter)
+npm install -g @zed-industries/claude-agent-acp
+
+# Codex CLI (via Zed's adapter)
+npm install -g @zed-industries/codex-acp
+
+# Kilo Code
+npm install -g kilo-acp`}</code></pre>
+
+          <blockquote>
+            <p><strong>Native ACP</strong> (no extra install needed): Gemini CLI (<code>--experimental-acp</code>), Goose (<code>goose acp</code>), OpenCode, Kimi CLI</p>
+          </blockquote>
+
+          <h2><Keyboard size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />Controls</h2>
+
+          <div className="controls-table">
+            <table>
+              <thead>
+                <tr><th>Action</th><th>Control</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Orbit Camera</td><td>Left-click drag</td></tr>
+                <tr><td>Pan Camera</td><td>Right-click drag</td></tr>
+                <tr><td>Zoom</td><td>Scroll wheel</td></tr>
+                <tr><td>Navigate Directories</td><td>Click on directory buildings</td></tr>
+                <tr><td>Open File Preview</td><td>Click on a file building</td></tr>
+                <tr><td>Teleport to Origin</td><td>Press <code>O</code></td></tr>
+                <tr><td>Search Files</td><td><code>Ctrl+F</code></td></tr>
+                <tr><td>Folder Navigator</td><td><code>Ctrl+O</code></td></tr>
+                <tr><td>Open Source Control</td><td>Click on a Git crystal</td></tr>
+                <tr><td>Spawn Agent</td><td><code>⌘+Enter</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h2><Palette size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />Visual Legend</h2>
+
+          <div className="controls-table">
+            <table>
+              <thead>
+                <tr><th>Element</th><th>Color</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Directories</td><td><span style={{ color: '#00FFFF' }}>■</span> Cyan</td><td>Folder nodes with road networks connecting them</td></tr>
+                <tr><td>Code Files</td><td><span style={{ color: '#00FFFF' }}>■</span> Cyan</td><td>.ts, .js, .py, .rs, etc.</td></tr>
+                <tr><td>Config Files</td><td><span style={{ color: '#FFFF00' }}>■</span> Yellow</td><td>.json, .yaml, .toml, etc.</td></tr>
+                <tr><td>Documentation</td><td><span style={{ color: '#FF6600' }}>■</span> Orange</td><td>.md, .txt, .css, .html, etc.</td></tr>
+                <tr><td>Running Process</td><td>Varies</td><td>Floating cube above directory</td></tr>
+                <tr><td>Git Crystal (clean)</td><td><span style={{ color: '#00FFFF' }}>■</span> Cyan</td><td>No uncommitted changes</td></tr>
+                <tr><td>Git Crystal (dirty)</td><td><span style={{ color: '#FFFF00' }}>■</span> Yellow</td><td>Uncommitted changes present</td></tr>
+                <tr><td>Git Orbs</td><td><span style={{ color: '#00FF88' }}>■</span> Green</td><td>Each orb = one unpushed commit</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h2><Monitor size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />HUD Features</h2>
           <ul>
-            <li><strong><a href="https://docs.anthropic.com/en/docs/agents-and-tools/claude-code" target="_blank" rel="noreferrer" style={{ color: 'var(--neon-cyan)' }}>Claude Code</a></strong>: <code>npm i -g @zed-industries/claude-agent-acp</code></li>
-            <li><strong><a href="https://github.com/Kvadratni/kilo-acp" target="_blank" rel="noreferrer" style={{ color: 'var(--neon-cyan)' }}>Kilo Code</a></strong>: <code>npm i -g kilo-acp</code></li>
-            <li><strong><a href="https://github.com/zed-industries/codex-acp" target="_blank" rel="noreferrer" style={{ color: 'var(--neon-cyan)' }}>Codex CLI</a></strong>: <code>npm i -g @zed-industries/codex-acp</code></li>
-            <li><strong>Gemini CLI</strong>: Supported natively via the <code>--experimental-acp</code> flag. Ensure the <code>gemini</code> command is available.</li>
-            <li><strong><a href="https://block.github.io/goose/" target="_blank" rel="noreferrer" style={{ color: 'var(--neon-cyan)' }}>Goose</a></strong>: Supported natively via the <code>goose acp</code> subcommand.</li>
-            <li><strong>OpenCode</strong> & <strong>Kimi CLI</strong>: Supported natively.</li>
+            <li><strong>Agent Panel</strong> — Shows active agents with real-time status indicators and provider colors</li>
+            <li><strong>Event Log</strong> — Full activity feed with persistence across page refreshes</li>
+            <li><strong>Spawn Agent</strong> — Launch any detected agent with a custom prompt</li>
+            <li><strong>Dangerous Mode</strong> — Toggle to allow agents to bypass all permission prompts (applies <code>--dangerously-skip-permissions</code> for Claude, <code>--yolo</code> for Gemini)</li>
+            <li><strong>Provider Selector</strong> — Dropdown to pick which AI agent to spawn, with auto-detection</li>
+            <li><strong>Directory Navigation</strong> — Change the visualized directory from the HUD</li>
+            <li><strong>Source Control Panel</strong> — Draggable Git panel with branch switching, commit, push/pull, and new branch creation</li>
           </ul>
 
-          <h2>Architecture</h2>
-          <p>The Grid is composed of a Node.js/Express bridge server and a React Three.js frontend. The node server bridges the gap between ACP binary protocols over Stdin/Stdout directly to a WebSocket stream, propagating tool calls, diffs, and bash events to the 3D client.</p>
+          <h2><Zap size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />File System Watching</h2>
+          <p>The Grid uses <strong>native OS filesystem watching</strong> (<code>fs.watch</code>) to detect file changes in real-time. When an agent creates, modifies, or deletes a file, the 3D visualization updates instantly — no polling or delays.</p>
+          <ul>
+            <li><strong>File Creation</strong> — New buildings rise from the ground with a green glow effect</li>
+            <li><strong>File Deletion</strong> — Buildings explode into physics-based particles with red crumbling fragments</li>
+            <li><strong>File Modification</strong> — The grid layout instantly recalculates to reflect new state</li>
+          </ul>
+
+          <h2><Shield size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />Architecture</h2>
+          <p>The Grid is composed of a <strong>Node.js/Express bridge server</strong> and a <strong>React Three.js frontend</strong>. The server bridges ACP binary protocols over stdin/stdout directly to a WebSocket stream, propagating tool calls, diffs, and bash events to the 3D client.</p>
+
+          <h3>Tech Stack</h3>
+          <div className="controls-table">
+            <table>
+              <thead>
+                <tr><th>Component</th><th>Technology</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Server</td><td>Node.js, Express, WebSocket (ws)</td></tr>
+                <tr><td>Agent Protocol</td><td>ACP SDK (<code>@agentclientprotocol/sdk</code>)</td></tr>
+                <tr><td>Frontend</td><td>React 18, TypeScript, Vite</td></tr>
+                <tr><td>3D Engine</td><td>Three.js via @react-three/fiber</td></tr>
+                <tr><td>State</td><td>Zustand with localStorage persistence</td></tr>
+                <tr><td>File Watching</td><td>Native <code>fs.watch</code> (recursive)</td></tr>
+              </tbody>
+            </table>
+          </div>
 
           <h2>Troubleshooting</h2>
 
@@ -192,6 +423,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/docs" element={<DocsPage />} />
+        <Route path="/providers" element={<ProvidersPage />} />
       </Routes>
     </Router>
   );
