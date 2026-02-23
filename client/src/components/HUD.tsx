@@ -107,20 +107,6 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
             outline: 'none',
           }}
         />
-        <button
-          onClick={onClose}
-          style={{
-            background: 'none',
-            border: '1px solid #666',
-            color: '#666',
-            padding: '8px 12px',
-            cursor: 'pointer',
-            borderRadius: '4px',
-            fontSize: '12px',
-          }}
-        >
-          ESC
-        </button>
       </div>
 
       {searchQuery && (
@@ -326,6 +312,7 @@ function LogPanel({ sessionId, onClose }: { sessionId: string; onClose: () => vo
 
 function AllEventsPanel({ onClose }: { onClose: () => void }) {
   const allEvents = useAgentStore((state) => state.allEvents);
+  const clearAllEvents = useAgentStore((state) => state.clearAllEvents);
 
   return (
     <div style={{
@@ -359,20 +346,38 @@ function AllEventsPanel({ onClose }: { onClose: () => void }) {
             Real-time hook events from all agents
           </div>
         </div>
-        <button
-          onClick={onClose}
-          style={{
-            background: 'none',
-            border: '1px solid #FF0066',
-            color: '#FF0066',
-            padding: '4px 12px',
-            cursor: 'pointer',
-            fontSize: '12px',
-            borderRadius: '3px',
-          }}
-        >
-          ✕
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={clearAllEvents}
+            disabled={allEvents.length === 0}
+            style={{
+              background: 'none',
+              border: '1px solid #FF6600',
+              color: '#FF6600',
+              padding: '4px 12px',
+              cursor: allEvents.length === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '12px',
+              borderRadius: '3px',
+              opacity: allEvents.length === 0 ? 0.5 : 1,
+            }}
+          >
+            Clear
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: '1px solid #FF0066',
+              color: '#FF0066',
+              padding: '4px 12px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              borderRadius: '3px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>

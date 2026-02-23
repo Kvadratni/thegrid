@@ -7,6 +7,7 @@ export default function GitControlPanel({ onClose }: Props) {
     const activeGitRepoPath = useAgentStore(state => state.activeGitRepoPath);
     const setActiveGitRepoPath = useAgentStore(state => state.setActiveGitRepoPath);
     const triggerGitAnimation = useAgentStore(state => state.triggerGitAnimation);
+    const refreshGitStatus = useAgentStore(state => state.refreshGitStatus);
 
     const [gitBranch, setGitBranch] = useState('');
     const [gitBranches, setGitBranches] = useState<string[]>([]);
@@ -100,6 +101,7 @@ export default function GitControlPanel({ onClose }: Props) {
             if (activeGitRepoPath) triggerGitAnimation(activeGitRepoPath, action as 'commit' | 'push' | 'pull');
             fetchStatus();
             fetchLog();
+            refreshGitStatus(activeGitRepoPath || undefined);
         } catch (e: any) {
             setError(e.message);
         } finally {
@@ -123,6 +125,7 @@ export default function GitControlPanel({ onClose }: Props) {
             fetchStatus();
             fetchLog();
             fetchBranches();
+            refreshGitStatus(activeGitRepoPath || undefined);
         } catch (e: any) {
             setError(e.message);
         } finally {

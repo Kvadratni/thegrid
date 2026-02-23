@@ -127,6 +127,7 @@ interface AgentStore {
   selectAgent: (sessionId: string | null) => void;
   getAgentLogs: (sessionId: string) => AgentEvent[];
   getAllEvents: () => AgentEvent[];
+  clearAllEvents: () => void;
   search: (query: string) => void;
   clearSearch: () => void;
   setHighlightedPath: (path: string | null) => void;
@@ -137,7 +138,7 @@ interface AgentStore {
   setProcesses: (processes: ProcessInfo[]) => void;
 
   // Git Actions
-  refreshGitStatus: () => Promise<void>;
+  refreshGitStatus: (dirPath?: string) => Promise<void>;
   refreshGitLog: () => Promise<void>;
   setGitPanelOpen: (isOpen: boolean) => void;
   setActiveGitRepoPath: (repoPath: string | null) => void;
@@ -240,6 +241,10 @@ export const useAgentStore = create<AgentStore>()(
 
       getAllEvents: () => {
         return get().allEvents;
+      },
+
+      clearAllEvents: () => {
+        set({ eventLogs: new Map(), allEvents: [] });
       },
 
       addFileEffect: (effect) => {
@@ -380,9 +385,10 @@ export const useAgentStore = create<AgentStore>()(
 
       setProcesses: (processes) => set({ processes }),
 
-      refreshGitStatus: async () => {
+      refreshGitStatus: async (dirPath?: string) => {
         try {
-          const res = await fetch('/api/git/status');
+          const pathParam = dirPath ? `?path=${encodeURIComponent(dirPath)}` : '';
+          const res = await fetch(`/api/git/status${pathParam}`);
           if (res.ok) {
             const data = await res.json();
             set({
