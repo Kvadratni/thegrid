@@ -97,3 +97,13 @@ Or POST events directly to `/api/events`.
 ```
 DELETE /api/agents/:sessionId
 ```
+
+## Provider-Specific Notes
+
+### Gemini CLI (`gemini`)
+- **ACP Delay (macOS):** Due to Node.js stdio buffering, Gemini ACP agents may experience a significant startup delay on macOS. To fix this, install `coreutils`:
+  ```bash
+  brew install coreutils
+  ```
+  The Grid will automatically detect `gstdbuf` and use it to unbuffer the agent process.
+- **Session Resumption:** Gemini ACP currently does not support resuming past sessions. The "Continue" button is intentionally disabled for this provider.

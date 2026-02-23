@@ -1189,7 +1189,7 @@ export default function HUD() {
                           >
                             KILL
                           </button>
-                        ) : agent.claudeSessionId && agent.status === 'completed' ? (
+                        ) : agent.canResume && agent.status === 'completed' ? (
                           <button
                             onClick={(e) => { e.stopPropagation(); setFollowUpAgentId(followUpAgentId === agent.sessionId ? null : agent.sessionId); }}
                             style={{

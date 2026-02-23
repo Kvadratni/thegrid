@@ -19,6 +19,7 @@ export interface AgentState {
   color: string;
   status?: AgentStatus;
   provider?: AgentProvider;
+  canResume?: boolean;
   claudeSessionId?: string;
   workingDirectory?: string;
 }

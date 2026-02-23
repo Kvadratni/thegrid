@@ -51,7 +51,9 @@ export interface ProviderConfig {
   /** ACP binary command (e.g. 'kilo-acp', 'claude-agent-acp'). When set and available, ACP is preferred. */
   acpCommand?: string;
   /** Extra CLI args to pass when launching the ACP binary (e.g. ['--experimental-acp']). */
-  acpArgs?: string[];
+  acpArgs?: string[] | ((dangerousMode?: boolean) => string[]);
+  /** Whether this provider supports session resumption. */
+  canResume?: boolean;
 }
 
 export interface ParsedStreamEvent {
@@ -84,6 +86,7 @@ export interface AgentState {
   color: string;
   status: AgentStatus;
   provider?: AgentProvider;
+  canResume?: boolean;
   claudeSessionId?: string;  // The actual Claude session ID for resumption
   workingDirectory?: string; // Original working directory for the agent
 }

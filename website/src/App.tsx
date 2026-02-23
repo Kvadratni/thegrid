@@ -168,6 +168,17 @@ cd server && npm run dev`}</code></pre>
           <h2>Architecture</h2>
           <p>The Grid is composed of a Node.js/Express bridge server and a React Three.js frontend. The node server bridges the gap between ACP binary protocols over Stdin/Stdout directly to a WebSocket stream, propagating tool calls, diffs, and bash events to the 3D client.</p>
 
+          <h2>Troubleshooting</h2>
+
+          <h3>ACP Agent Delay on macOS</h3>
+          <p>If you experience a long delay (10+ seconds) between spawning an agent and seeing the first log output, it is likely due to <strong>stdio buffering</strong> in Node.js.</p>
+          <p>The Grid automatically attempts to fix this by wrapping the agent process with <code>stdbuf</code> (Linux) or <code>gstdbuf</code> (macOS). <strong>macOS Users:</strong> To enable this fix, you must install the <code>coreutils</code> package:</p>
+          <pre><code>brew install coreutils</code></pre>
+          <p>If <code>gstdbuf</code> is not found, The Grid will fall back to the standard buffered mode, and you may continue to experience delays.</p>
+
+          <h3>Missing "Continue" Button for Gemini</h3>
+          <p>The <strong>Continue</strong> button is intentionally disabled for Gemini agents. The current <code>gemini --experimental-acp</code> implementation does not support stateful session resumption. This feature will be re-enabled once the underlying protocol supports it.</p>
+
         </div>
       </div>
     </div>

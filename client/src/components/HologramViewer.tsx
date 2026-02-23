@@ -222,7 +222,7 @@ export default function HologramViewer({ filePath, height }: HologramViewerProps
                         {content !== null && !loading && (
                             <div style={{ padding: isMarkdown ? '20px' : '0', color: isMarkdown ? '#E0E0E0' : '#fff' }}>
                                 {isMarkdown ? (
-                                    <div style={{ fontSize: '14px', lineHeight: '1.6' }}>
+                                    <div className="markdown-preview" style={{ fontSize: '14px', lineHeight: '1.6' }}>
                                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
                                     </div>
                                 ) : (

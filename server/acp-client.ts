@@ -9,7 +9,7 @@ import type {
     RequestPermissionRequest,
     RequestPermissionResponse,
 } from '@agentclientprotocol/sdk';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
 import { normalizeToolName } from './providers.js';
 import type { AgentEvent, AgentProvider, AgentState, ServerMessage } from './types.js';
@@ -60,13 +60,38 @@ export async function spawnAcpAgent(opts: AcpSpawnOptions): Promise<AcpHandle> {
         provider, providerColor, broadcast, agents, spawnedProcesses,
     } = opts;
 
-    console.log(`[${sessionId}] Spawning ACP agent: ${acpCommand} ${acpArgs.join(' ')}`);
+    // Wrap the command in stdbuf to disable stdout/stderr buffering.
+    // This is critical for NDJSON streams over stdio because Node.js 
+    // will otherwise block until the buffer fills up, causing massive delays 
+    // in the ACP SDK initialization handshake.
+    let finalCommand = acpCommand;
+    let finalArgs = acpArgs;
+
+    // Check if stdbuf is available for buffering fix
+    try {
+        // Try to find stdbuf or gstdbuf (Homebrew coreutils on Mac)
+        let stdbufExe = 'stdbuf';
+        try {
+            execSync('command -v stdbuf');
+        } catch {
+            stdbufExe = 'gstdbuf'; 
+            execSync('command -v gstdbuf');
+        }
+
+        finalCommand = stdbufExe;
+        finalArgs = ['-o0', '-e0', acpCommand, ...acpArgs];
+    } catch (e) {
+        // Fallback to original command if wrapper fails
+        console.warn(`[${sessionId}] Warning: stdbuf/gstdbuf not found. ACP messages may be delayed.`);
+    }
+
+    console.log(`[${sessionId}] Spawning ACP agent via: ${finalCommand} ${finalArgs.join(' ')}`);
 
     // Spawn the ACP bridge binary
-    const child = spawn(acpCommand, acpArgs, {
+    const child = spawn(finalCommand, finalArgs, {
         cwd: workingDirectory,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, TERM: 'dumb' },
+        env: { ...process.env, TERM: 'dumb', PYTHONUNBUFFERED: '1', FORCE_COLOR: '0' },
     });
 
     spawnedProcesses.set(sessionId, child);

@@ -241,22 +241,7 @@ export default function FileViewer({ filePath, onClose }: FileViewerProps) {
                 }}
             />
 
-            {/* Markdown Styles */}
-            {isMarkdown && (
-                <style dangerouslySetInnerHTML={{
-                    __html: `
-                    .markdown-preview h1 { color: #00FFFF; margin-bottom: 16px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 8px; }
-                    .markdown-preview h2, .markdown-preview h3 { color: #AADDFF; margin-top: 24px; }
-                    .markdown-preview a { color: #FF99CC; text-decoration: none; }
-                    .markdown-preview code { font-family: monospace; background: rgba(0,255,255,0.1); padding: 2px 4px; border-radius: 3px; color: #00FFFF; }
-                    .markdown-preview pre { background: rgba(0,0,0,0.5); padding: 12px; border-radius: 6px; border: 1px solid rgba(0,255,255,0.2); overflow-x: auto; }
-                    .markdown-preview pre code { background: none; padding: 0; color: #E0E0E0; }
-                    .markdown-preview ul, .markdown-preview ol { padding-left: 20px; }
-                    .markdown-preview table { border-collapse: collapse; width: 100%; margin: 16px 0; }
-                    .markdown-preview th, .markdown-preview td { border: 1px solid rgba(255,255,255,0.1); padding: 8px; text-align: left; }
-                    .markdown-preview th { background: rgba(0,255,255,0.05); color: #00FFFF; }
-                `}} />
-            )}
+            {/* Content styling is now globally handled via index.html */}
         </div>
     );
 }

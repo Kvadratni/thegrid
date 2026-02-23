@@ -108,6 +108,21 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
+## Troubleshooting
+
+### ACP Agent Delay on macOS
+If you experience a long delay (10+ seconds) between spawning an agent and seeing the first log output, it is likely due to **stdio buffering** in Node.js.
+
+The Grid automatically attempts to fix this by wrapping the agent process with `stdbuf` (Linux) or `gstdbuf` (macOS).
+**macOS Users:** To enable this fix, you must install the `coreutils` package:
+```bash
+brew install coreutils
+```
+If `gstdbuf` is not found, The Grid will fall back to the standard buffered mode, and you may continue to experience delays.
+
+### Missing "Continue" Button for Gemini
+The **Continue** button is intentionally disabled for Gemini agents. The current `gemini --experimental-acp` implementation does not support stateful session resumption. This feature will be re-enabled once the underlying protocol supports it.
+
 ## Architecture
 
 ```

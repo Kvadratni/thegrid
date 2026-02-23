@@ -302,6 +302,7 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
         },
         parseStream: parseClaudeStream,
         acpCommand: 'claude-agent-acp',
+        canResume: true,
     },
     gemini: {
         name: 'Gemini CLI',
@@ -315,7 +316,12 @@ export const PROVIDER_CONFIGS: Partial<Record<AgentProvider, ProviderConfig>> = 
         },
         parseStream: parseGenericStream,
         acpCommand: 'gemini',
-        acpArgs: ['--experimental-acp'],
+        acpArgs: (dangerousMode?: boolean) => {
+            const args = ['--experimental-acp'];
+            if (dangerousMode) args.push('--yolo');
+            return args;
+        },
+        canResume: false,
     },
     codex: {
         name: 'Codex CLI',

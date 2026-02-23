@@ -399,6 +399,7 @@ app.get('/api/providers', async (_req, res) => {
     color: string;
     available: boolean;
     spawnable: boolean;
+    canResume: boolean;
   }> = [];
 
   for (const providerId of ALL_PROVIDERS) {
@@ -421,6 +422,7 @@ app.get('/api/providers', async (_req, res) => {
       color: PROVIDER_COLORS[providerId],
       available,
       spawnable,
+      canResume: PROVIDER_CONFIGS[providerId]?.canResume || false,
     });
   }
 
@@ -571,11 +573,15 @@ app.post('/api/agents/spawn', async (req, res) => {
           color: providerConfig.color,
           status: 'running',
           provider,
+          canResume: providerConfig.canResume,
           workingDirectory,
         });
         broadcast({ type: 'agents', payload: Array.from(agents.values()) });
 
-        const acpArgs = [...(providerConfig.acpArgs || [])];
+        const acpArgsArray = typeof providerConfig.acpArgs === 'function'
+          ? providerConfig.acpArgs(dangerousMode)
+          : (providerConfig.acpArgs || []);
+        const acpArgs = [...acpArgsArray];
 
         console.log(`[${sessionId}] Using ACP protocol: ${resolvedAcpCommand} ${acpArgs.join(' ')}`);
 
@@ -633,6 +639,7 @@ app.post('/api/agents/spawn', async (req, res) => {
       color: providerConfig.color,
       status: 'running',
       provider,
+      canResume: providerConfig.canResume,
       workingDirectory,
     });
 
