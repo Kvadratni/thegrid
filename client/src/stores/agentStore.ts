@@ -194,24 +194,6 @@ export const useAgentStore = create<AgentStore>()(
       gitAnimations: [],
 
       setAgents: (agents) => {
-        // Auto-remove completed/error agents after 30 seconds
-        const COMPLETED_AGENT_TIMEOUT = 30000;
-
-        agents.forEach(agent => {
-          if (agent.status === 'completed' || agent.status === 'error') {
-            setTimeout(() => {
-              const currentAgents = get().agents;
-              const stillExists = currentAgents.find(a =>
-                a.sessionId === agent.sessionId &&
-                (a.status === 'completed' || a.status === 'error')
-              );
-              if (stillExists) {
-                get().removeAgent(agent.sessionId);
-              }
-            }, COMPLETED_AGENT_TIMEOUT);
-          }
-        });
-
         set({ agents });
       },
 

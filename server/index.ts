@@ -7,6 +7,7 @@ import { readdir, stat } from 'fs/promises';
 import { join, extname, basename } from 'path';
 import { randomUUID } from 'crypto';
 import { promisify } from 'util';
+import { watch, FSWatcher } from 'fs';
 import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo, AgentProvider } from './types.js';
 import { PROVIDER_CONFIGS, PROVIDER_COLORS, PROVIDER_NAMES, PROVIDER_COMMANDS, ALL_PROVIDERS, SPAWNABLE_PROVIDERS, normalizeToolName } from './providers.js';
 import { spawnAcpAgent } from './acp-client.js';
@@ -42,6 +43,44 @@ function getAgentColor(provider?: AgentProvider, agentType: 'main' | 'subagent' 
 
 let watchedDirectory = '';
 let cachedProcesses: ProcessInfo[] = [];
+let fsWatcher: FSWatcher | null = null;
+let currentWatchPath = '';
+
+function setupWatcher(dir: string) {
+  if (currentWatchPath === dir) return;
+
+  if (fsWatcher) {
+    fsWatcher.close();
+    fsWatcher = null;
+  }
+
+  currentWatchPath = dir;
+  try {
+    fsWatcher = watch(dir, { recursive: true }, async (eventType, filename) => {
+      const fullPath = filename ? join(dir, filename) : dir;
+      let action: string = eventType;
+
+      // Determine if it's a create/rename vs a delete by stat-ing the file
+      if (eventType === 'rename' && filename) {
+        try {
+          await stat(fullPath);
+          action = 'create'; // File exists now
+        } catch (err: any) {
+          if (err.code === 'ENOENT') {
+            action = 'delete'; // File no longer exists
+          }
+        }
+      } else if (eventType === 'change') {
+        action = 'edit';
+      }
+
+      broadcast({ type: 'filesystemChange', payload: { action, path: fullPath } });
+    });
+    console.log(`👁️  Watching filesystem at ${dir}`);
+  } catch (err) {
+    console.log(`⚠️  Could not watch ${dir}:`, err);
+  }
+}
 
 async function getRunningProcesses(basePath: string): Promise<ProcessInfo[]> {
   // Only scan if path is 6 levels deep or less (e.g. /Users/name/Dev/project/sub/folder)
@@ -876,10 +915,15 @@ app.post('/api/agents/:sessionId/resume', (req, res) => {
                 let filePath = block.input?.file_path || block.input?.path || workingDirectory;
 
                 if (toolName === 'Bash' && block.input?.command) {
-                  const deleteCheck = isDeleteCommand(block.input.command);
+                  const command = block.input.command;
+                  const deleteCheck = isDeleteCommand(command);
                   if (deleteCheck.isDelete) {
                     toolName = 'Delete';
                     filePath = deleteCheck.paths[0] || filePath;
+                  } else if (/\b(ls|dir|tree)\b/.test(command)) {
+                    toolName = 'Glob';
+                  } else if (/\b(find|grep|ag|rg|fd)\b/.test(command)) {
+                    toolName = 'Grep';
                   }
                 }
 
@@ -893,15 +937,12 @@ app.post('/api/agents/:sessionId/resume', (req, res) => {
                 };
                 broadcast({ type: 'event', payload: event });
 
-                agent.currentPath = filePath;
-                agent.lastActivity = event.timestamp;
-                broadcast({ type: 'agents', payload: Array.from(agents.values()) });
-
-                if (['Write', 'Edit', 'Delete', 'NotebookEdit'].includes(toolName)) {
-                  setTimeout(() => {
-                    broadcast({ type: 'filesystemChange', payload: { action: toolName.toLowerCase(), path: filePath } });
-                  }, 500);
+                const agent = agents.get(`${sessionId}-main`);
+                if (agent) {
+                  agent.currentPath = filePath;
+                  agent.lastActivity = event.timestamp;
                 }
+                broadcast({ type: 'agents', payload: Array.from(agents.values()) });
               } else if (block.type === 'text' && block.text) {
                 const textHash = `text:${block.text.slice(0, 100)}`;
                 const seenIds = seenToolUseIds.get(sessionId) || new Set();
@@ -1018,6 +1059,7 @@ wss.on('connection', (ws) => {
 
       if (message.type === 'getFilesystem' && message.path) {
         watchedDirectory = message.path;
+        setupWatcher(message.path);
         const node = await scanDirectory(message.path);
         if (node) {
           sendToClient(ws, { type: 'filesystem', payload: node });

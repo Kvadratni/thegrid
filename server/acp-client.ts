@@ -74,7 +74,7 @@ export async function spawnAcpAgent(opts: AcpSpawnOptions): Promise<AcpHandle> {
         try {
             execSync('command -v stdbuf');
         } catch {
-            stdbufExe = 'gstdbuf'; 
+            stdbufExe = 'gstdbuf';
             execSync('command -v gstdbuf');
         }
 
@@ -146,6 +146,43 @@ export async function spawnAcpAgent(opts: AcpSpawnOptions): Promise<AcpHandle> {
                     }
                 }
 
+                // Parse bash commands to detect file creation/deletion
+                const anyUpdate = update as any;
+                const toolArgs = anyUpdate.arguments || anyUpdate.input;
+                if (toolName === 'Bash' && toolArgs && typeof toolArgs === 'object') {
+                    const command = toolArgs.command || toolArgs.script;
+                    if (typeof command === 'string') {
+                        // Check for deletions
+                        const deletePatterns = [
+                            /\brm\s+(?:-[rfiv]+\s+)?([^\s;&|]+)/,
+                            /\brmdir\s+([^\s;&|]+)/,
+                            /\bunlink\s+([^\s;&|]+)/,
+                        ];
+                        for (const pattern of deletePatterns) {
+                            const match = command.match(pattern);
+                            if (match) {
+                                toolName = 'Delete';
+                                filePath = match[1].trim();
+                                break;
+                            }
+                        }
+
+                        // Check for writes/edits (e.g. echo "foo" > file.txt)
+                        if (toolName === 'Bash') {
+                            const writePattern = />\s*([^\s;&|]+)/;
+                            const writeMatch = command.match(writePattern);
+                            if (writeMatch) {
+                                toolName = 'Write';
+                                filePath = writeMatch[1].trim();
+                            } else if (/\b(ls|dir|tree)\b/.test(command)) {
+                                toolName = 'Glob';
+                            } else if (/\b(find|grep|ag|rg|fd)\b/.test(command)) {
+                                toolName = 'Grep';
+                            }
+                        }
+                    }
+                }
+
                 const event: AgentEvent = {
                     timestamp: new Date().toISOString(),
                     sessionId,
@@ -166,13 +203,6 @@ export async function spawnAcpAgent(opts: AcpSpawnOptions): Promise<AcpHandle> {
                     agent.lastActivity = event.timestamp;
                 }
                 broadcast({ type: 'agents', payload: Array.from(agents.values()) });
-
-                // Trigger filesystem refresh for file-modifying operations
-                if (['Write', 'Edit', 'Delete', 'NotebookEdit'].includes(toolName)) {
-                    setTimeout(() => {
-                        broadcast({ type: 'filesystemChange', payload: { action: toolName.toLowerCase(), path: filePath } });
-                    }, 500);
-                }
             } else if (update.sessionUpdate === 'agent_message_chunk') {
                 // Text streaming — broadcast as an assistant message event
                 const content = update.content;

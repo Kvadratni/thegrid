@@ -127,12 +127,21 @@ export default function LightCycle({ agent }: LightCycleProps) {
     if (agent.currentPath && fileSystem) {
       const pos = getPositionForPath(agent.currentPath, fileSystem);
       if (pos) {
-        const agentIndex = parseInt(agent.sessionId.replace(/\D/g, '').slice(-2) || '0', 10) % 4;
-        const offsetAngles = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
-        const offsetAngle = offsetAngles[agentIndex];
+        // Group agents at the same path dynamically to prevent overlap
+        const allAgents = useAgentStore.getState().agents;
+        const agentsAtSamePath = allAgents
+          .filter(a => a.currentPath === agent.currentPath)
+          .sort((a, b) => a.sessionId.localeCompare(b.sessionId));
 
-        const offsetX = Math.sin(offsetAngle) * AGENT_OFFSET;
-        const offsetZ = Math.cos(offsetAngle) * AGENT_OFFSET;
+        const agentIndex = agentsAtSamePath.findIndex(a => a.sessionId === agent.sessionId);
+        const totalAtNode = agentsAtSamePath.length;
+
+        // If alone, snap exactly to center. Otherwise fan out efficiently.
+        const offsetAngle = totalAtNode > 1 ? (agentIndex / totalAtNode) * Math.PI * 2 : 0;
+        const magnitude = totalAtNode > 1 ? AGENT_OFFSET : 0;
+
+        const offsetX = Math.sin(offsetAngle) * magnitude;
+        const offsetZ = Math.cos(offsetAngle) * magnitude;
 
         const targetPos = new THREE.Vector3(pos.x + offsetX, 0, pos.z + offsetZ);
 

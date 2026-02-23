@@ -136,9 +136,20 @@ const ROOT_DIRECTIONS = [
   { dx: -1, dz: 0 },  // West (-X)
 ];
 
+// Global cache to maintain stable layouts across renders
+export const positionCache = new Map<string, { gx: number, gz: number }>();
+
+export function getCachedPosition(path: string): { x: number; z: number } | null {
+  const cached = positionCache.get(path);
+  if (cached) {
+    return { x: cached.gx * GRID_UNIT, z: cached.gz * GRID_UNIT };
+  }
+  return null;
+}
+
 // Portal is at z=-8 in world coords, reserve that area
-const PORTAL_RESERVE_Z = -4; // In grid cells (z=-8 / GRID_UNIT)
-const PORTAL_RESERVE_WIDTH = 4; // Grid cells to reserve around portal
+const PORTAL_RESERVE_Z = -2; // Start closer to origin (moves reservation forward)
+const PORTAL_RESERVE_WIDTH = 6; // Grid cells to reserve around portal
 
 export function calculateLayout(root: FileSystemNode): LayoutNode {
   const grid = new OccupancyGrid();
@@ -205,12 +216,30 @@ function layoutWithGrid(
       const direction = ROOT_DIRECTIONS[dirIndex];
       let offset = ITEM_CELLS + 1; // Start just outside center
 
-      quadrant.forEach((item) => {
-        const startGx = parentGx + direction.dx * offset;
-        const startGz = parentGz + direction.dz * offset;
+      // Sort quadrant iteratively: cached items first so they don't get displaced
+      quadrant.sort((a, b) => {
+        const aCached = positionCache.has(a.dir.path) ? 1 : 0;
+        const bCached = positionCache.has(b.dir.path) ? 1 : 0;
+        return bCached - aCached;
+      });
 
-        const { gx, gz } = grid.findFreePosition(startGx, startGz, ITEM_CELLS, ITEM_CELLS);
-        grid.occupy(gx, gz, ITEM_CELLS, ITEM_CELLS, 2);
+      quadrant.forEach((item) => {
+        const cached = positionCache.get(item.dir.path);
+        let gx, gz;
+
+        if (cached && grid.isAreaFree(cached.gx, cached.gz, item.size.width, item.size.depth)) {
+          gx = cached.gx;
+          gz = cached.gz;
+        } else {
+          const startGx = parentGx + direction.dx * offset;
+          const startGz = parentGz + direction.dz * offset;
+          const pos = grid.findFreePosition(startGx, startGz, item.size.width, item.size.depth);
+          gx = pos.gx;
+          gz = pos.gz;
+        }
+
+        positionCache.set(item.dir.path, { gx, gz });
+        grid.occupy(gx, gz, item.size.width, item.size.depth, 2);
 
         const childLayout = layoutWithGrid(item.dir, grid, gx, gz, false);
         // Position relative to parent
@@ -224,14 +253,33 @@ function layoutWithGrid(
       });
     });
 
-    // Place files around center in a tight ring
-    files.forEach((file, i) => {
-      const angle = (i / Math.max(files.length, 1)) * Math.PI * 2;
-      const radius = ITEM_CELLS + 1 + Math.floor(i / 8);
-      const startGx = parentGx + Math.round(Math.cos(angle) * radius);
-      const startGz = parentGz + Math.round(Math.sin(angle) * radius);
+    // Sort files prioritized by cache
+    const sortedFiles = [...files].sort((a, b) => {
+      const aCached = positionCache.has(a.path) ? 1 : 0;
+      const bCached = positionCache.has(b.path) ? 1 : 0;
+      return bCached - aCached;
+    });
 
-      const { gx, gz } = grid.findFreePosition(startGx, startGz, ITEM_CELLS, ITEM_CELLS);
+    // Place files around center in a tight ring
+    sortedFiles.forEach((file, i) => {
+      const cached = positionCache.get(file.path);
+      let gx, gz;
+
+      if (cached && grid.isAreaFree(cached.gx, cached.gz, ITEM_CELLS, ITEM_CELLS)) {
+        gx = cached.gx;
+        gz = cached.gz;
+      } else {
+        const angle = (i / Math.max(sortedFiles.length, 1)) * Math.PI * 2;
+        const radius = ITEM_CELLS + 2 + Math.floor(i / 8); // Start further out (+2 instead of +1)
+        const startGx = parentGx + Math.round(Math.cos(angle) * radius);
+        const startGz = parentGz + Math.round(Math.sin(angle) * radius);
+
+        const pos = grid.findFreePosition(startGx, startGz, ITEM_CELLS, ITEM_CELLS);
+        gx = pos.gx;
+        gz = pos.gz;
+      }
+
+      positionCache.set(file.path, { gx, gz });
       grid.occupy(gx, gz, ITEM_CELLS, ITEM_CELLS, 1);
 
       layout.children!.push({
@@ -244,28 +292,46 @@ function layoutWithGrid(
       });
     });
   } else {
-    // Non-root: place children in a compact grid pattern
-    const allItems = [...directories, ...files];
+    // Non-root: place children in a compact grid pattern, prioritizing cached items
+    const allItems = [...directories, ...files].sort((a, b) => {
+      const aCached = positionCache.has(a.path) ? 1 : 0;
+      const bCached = positionCache.has(b.path) ? 1 : 0;
+      return bCached - aCached;
+    });
+
     const cols = Math.ceil(Math.sqrt(allItems.length));
 
     allItems.forEach((item, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
+      const size = item.type === 'directory' ? calculateSubtreeSize(item) : { width: ITEM_CELLS, depth: ITEM_CELLS };
+      const cached = positionCache.get(item.path);
+      let gx, gz;
 
-      const startGx = parentGx + (col - Math.floor(cols / 2)) * ITEM_CELLS;
-      const startGz = parentGz + (row + 1) * ITEM_CELLS;
+      if (cached && grid.isAreaFree(cached.gx, cached.gz, size.width, size.depth)) {
+        gx = cached.gx;
+        gz = cached.gz;
+      } else {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
 
-      const { gx, gz } = grid.findFreePosition(startGx, startGz, ITEM_CELLS, ITEM_CELLS);
+        const startGx = parentGx + (col - Math.floor(cols / 2)) * ITEM_CELLS;
+        const startGz = parentGz + (row + 1) * ITEM_CELLS;
+
+        const pos = grid.findFreePosition(startGx, startGz, size.width, size.depth);
+        gx = pos.gx;
+        gz = pos.gz;
+      }
+
+      positionCache.set(item.path, { gx, gz });
 
       if (item.type === 'directory') {
-        grid.occupy(gx, gz, ITEM_CELLS, ITEM_CELLS, 2);
+        grid.occupy(gx, gz, size.width, size.depth, 2);
         const childLayout = layoutWithGrid(item, grid, gx, gz, false);
         // Position relative to parent
         childLayout.x = (gx - parentGx) * GRID_UNIT;
         childLayout.z = (gz - parentGz) * GRID_UNIT;
         layout.children!.push(childLayout);
       } else {
-        grid.occupy(gx, gz, ITEM_CELLS, ITEM_CELLS, 1);
+        grid.occupy(gx, gz, size.width, size.depth, 1);
         layout.children!.push({
           node: item,
           // Position relative to parent

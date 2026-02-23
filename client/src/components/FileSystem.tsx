@@ -3,7 +3,7 @@ import { Text, Billboard } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useAgentStore, FileSystemNode, ProcessInfo } from '../stores/agentStore';
-import { calculateLayout, LayoutNode } from '../utils/fileSystemLayout';
+import { calculateLayout, LayoutNode, getCachedPosition } from '../utils/fileSystemLayout';
 import FileEffect from './effects/FileEffect';
 import FileCrumble from './effects/FileCrumble';
 import FileRise from './effects/FileRise';
@@ -576,8 +576,17 @@ export default function FileSystem({ node, position }: FileSystemProps) {
 
   const animationPositions = useMemo(() => {
     return fileAnimations.map(anim => {
-      const info = findNodeInfo(anim.path, layout, 0, 0);
-      // For delete animations, we may not find the file anymore, so estimate position
+      let info = findNodeInfo(anim.path, layout, 0, 0);
+
+      // For delete animations, the file node is gone from the layout.
+      // Recover its last known world position from the layout position cache.
+      if (!info) {
+        const cached = getCachedPosition(anim.path);
+        if (cached) {
+          info = { x: cached.x, z: cached.z, height: 2 };
+        }
+      }
+
       const estimatedInfo = info || { x: 0, z: 0, height: 2 };
       return { animation: anim, info: estimatedInfo };
     });

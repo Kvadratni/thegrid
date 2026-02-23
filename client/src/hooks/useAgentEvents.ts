@@ -24,7 +24,7 @@ export function useAgentEvents() {
   const connect = useCallback(() => {
     // Check for both OPEN and CONNECTING states to prevent duplicate connections
     if (wsRef.current?.readyState === WebSocket.OPEN ||
-        wsRef.current?.readyState === WebSocket.CONNECTING) {
+      wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
     }
 
@@ -58,6 +58,15 @@ export function useAgentEvents() {
           case 'filesystemChange': {
             const change = message.payload as { action: string; path?: string };
             console.log('📂 Filesystem change:', change.action, change.path);
+
+            if (change.path && (change.action === 'create' || change.action === 'delete')) {
+              useAgentStore.getState().addFileAnimation({
+                path: change.path,
+                type: change.action as 'create' | 'delete',
+                startTime: Date.now()
+              });
+            }
+
             requestFilesystem(currentPathRef.current);
             break;
           }

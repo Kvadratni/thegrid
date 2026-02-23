@@ -473,10 +473,33 @@ function FilesystemNavigator({ onClose }: { onClose: () => void }) {
   const setCurrentPath = useAgentStore((state) => state.setCurrentPath);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Split input into dir path and search term
+  const getSearchParts = (input: string) => {
+    let dir = browsePath;
+    let filter = input;
+
+    if (input.includes('/')) {
+      const parts = input.split('/');
+      filter = parts.pop() || '';
+      const inputDir = parts.join('/');
+
+      if (input.startsWith('/')) {
+        dir = inputDir || '/';
+      } else {
+        dir = browsePath === '/' ? `/${inputDir}` : `${browsePath}/${inputDir}`;
+      }
+    }
+
+    // Normalize dir
+    dir = dir.replace(/\/+/g, '/');
+    return { dir, filter: filter.toLowerCase() };
+  };
+
+  const { dir: fetchDir, filter: searchTerm } = getSearchParts(inputPath);
+
   // Load directory entries
   useEffect(() => {
-    const pathToFetch = inputPath.trim() || browsePath;
-    const encodedPath = encodeURIComponent(pathToFetch);
+    const encodedPath = encodeURIComponent(fetchDir);
     fetch(`/api/filesystem/${encodedPath}?depth=1`)
       .then(res => res.json())
       .then(data => {
@@ -487,51 +510,66 @@ function FilesystemNavigator({ onClose }: { onClose: () => void }) {
           });
           setEntries(sorted);
           setSelectedIndex(0);
+        } else {
+          setEntries([]);
         }
       })
       .catch(() => setEntries([]));
-  }, [browsePath, inputPath]);
+  }, [fetchDir]);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
   const navigate = (path: string) => {
-    setCurrentPath(path);
+    let finalPath = path;
+    if (!finalPath.startsWith('/')) {
+      finalPath = browsePath === '/' ? `/${finalPath}` : `${browsePath}/${finalPath}`;
+    }
+    setCurrentPath(finalPath);
     onClose();
   };
+
+  const filteredEntries = searchTerm
+    ? entries.filter(e => e.name.toLowerCase().includes(searchTerm))
+    : entries;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       onClose();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(i => Math.min(i + 1, entries.length - 1));
+      setSelectedIndex(i => Math.min(i + 1, filteredEntries.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Tab' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (filteredEntries[selectedIndex]) {
+        const entry = filteredEntries[selectedIndex];
+        if (entry.type === 'directory') {
+          setBrowsePath(entry.path);
+          setInputPath('');
+          setSelectedIndex(0);
+        } else {
+          const parts = inputPath.split('/');
+          parts.pop(); // remove filter term
+          parts.push(entry.name);
+          setInputPath(parts.join('/'));
+        }
+      }
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (inputPath.trim()) {
         navigate(inputPath.trim());
-      } else if (entries[selectedIndex]) {
-        const entry = entries[selectedIndex];
-        if (entry.type === 'directory') {
-          setBrowsePath(entry.path);
-          setInputPath('');
-        } else {
-          navigate(entry.path.split('/').slice(0, -1).join('/'));
-        }
+      } else {
+        navigate(browsePath);
       }
     } else if (e.key === 'Backspace' && !inputPath) {
       const parent = browsePath.split('/').slice(0, -1).join('/') || '/';
       setBrowsePath(parent);
     }
   };
-
-  const filteredEntries = inputPath.trim()
-    ? entries.filter(e => e.name.toLowerCase().includes(inputPath.toLowerCase()))
-    : entries;
 
   return (
     <div style={{
@@ -557,8 +595,11 @@ function FilesystemNavigator({ onClose }: { onClose: () => void }) {
           ref={inputRef}
           type="text"
           value={inputPath}
-          onChange={(e) => setInputPath(e.target.value)}
-          placeholder="Type path or filter..."
+          onChange={(e) => {
+            setInputPath(e.target.value);
+            setSelectedIndex(0);
+          }}
+          placeholder="Type path or filter... (Tab to autocomplete)"
           style={{
             width: '100%',
             background: 'rgba(0, 0, 0, 0.5)',
@@ -622,7 +663,8 @@ function FilesystemNavigator({ onClose }: { onClose: () => void }) {
         gap: '12px',
       }}>
         <span>↑↓ navigate</span>
-        <span>Enter open</span>
+        <span>Tab/→ select item</span>
+        <span>Enter accept path</span>
         <span>⌫ parent dir</span>
         <span>Esc close</span>
       </div>
@@ -684,14 +726,18 @@ export default function HUD() {
       .then(res => res.json())
       .then((data: ProviderInfo[]) => {
         setProviders(data);
+
         // Only auto-select if current selected provider is not available
-        // We read it fresh from the store to avoid dependency issues
-        const currentProvider = useAgentStore.getState().selectedProvider;
-        const currentProviderInfo = data.find(p => p.id === currentProvider);
-        if (!currentProviderInfo?.available || !currentProviderInfo?.spawnable) {
-          const firstAvailable = data.find(p => p.available && p.spawnable);
-          if (firstAvailable) useAgentStore.getState().setSelectedProvider(firstAvailable.id);
-        }
+        // Wait a tick to ensure Zustand has hydrated from localStorage
+        setTimeout(() => {
+          const currentProvider = useAgentStore.getState().selectedProvider;
+          const currentProviderInfo = data.find(p => p.id === currentProvider);
+
+          if (!currentProviderInfo || !currentProviderInfo.available || !currentProviderInfo.spawnable) {
+            const firstAvailable = data.find(p => p.available && p.spawnable);
+            if (firstAvailable) useAgentStore.getState().setSelectedProvider(firstAvailable.id);
+          }
+        }, 100);
       })
       .catch(err => console.error('Failed to fetch providers:', err));
   }, []);
@@ -712,18 +758,6 @@ export default function HUD() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Fetch available providers on mount
-  useEffect(() => {
-    fetch('/api/providers')
-      .then(res => res.json())
-      .then((data: ProviderInfo[]) => {
-        setProviders(data);
-        // Auto-select first available provider
-        const firstAvailable = data.find(p => p.available && p.spawnable);
-        if (firstAvailable) setSelectedProvider(firstAvailable.id);
-      })
-      .catch(err => console.error('Failed to fetch providers:', err));
-  }, []);
 
   const handleSpawn = async () => {
     if (!prompt.trim() || isSpawning) return;
