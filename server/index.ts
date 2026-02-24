@@ -8,7 +8,7 @@ import { join, extname, basename } from 'path';
 import { randomUUID } from 'crypto';
 import { promisify } from 'util';
 import { watch, FSWatcher } from 'fs';
-import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo, AgentProvider } from './types.js';
+import type { AgentEvent, AgentState, FileSystemNode, ServerMessage, ClientMessage, ProcessInfo, AgentProvider, ToolName } from './types.js';
 import { PROVIDER_CONFIGS, PROVIDER_COLORS, PROVIDER_NAMES, PROVIDER_COMMANDS, ALL_PROVIDERS, SPAWNABLE_PROVIDERS, normalizeToolName } from './providers.js';
 import { spawnAcpAgent } from './acp-client.js';
 import * as git from './git.js';
@@ -45,6 +45,88 @@ let watchedDirectory = '';
 let cachedProcesses: ProcessInfo[] = [];
 let fsWatcher: FSWatcher | null = null;
 let currentWatchPath = '';
+let unbridgedAgents = new Set<string>();
+let observerModeEnabled = false;
+
+// ─── Observer Mode: Heuristic Scoring ──────────────────────────────────────────
+// When multiple unbridged agents are active, score each to determine who made a file change.
+
+async function scoreAndPickAgent(candidates: AgentState[], filePath: string): Promise<AgentState | null> {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const scores = new Map<string, number>();
+  for (const a of candidates) scores.set(a.sessionId, 0);
+
+  // 1. lsof check: does the agent currently have the file open? (+3)
+  try {
+    const pids = candidates
+      .map(a => { const m = a.sessionId.match(/unbridged-\w+-(\d+)/); return m ? m[1] : null; })
+      .filter(Boolean) as string[];
+
+    if (pids.length > 0) {
+      const pidArg = pids.map(p => `-p ${p}`).join(' ');
+      const { stdout } = await execAsync(`lsof ${pidArg} 2>/dev/null | grep "${filePath.replace(/"/g, '\\"')}" || true`, { timeout: 1000 });
+      if (stdout.trim()) {
+        // Find which PID(s) matched
+        for (const line of stdout.trim().split('\n')) {
+          const parts = line.split(/\s+/);
+          const pid = parts[1];
+          if (pid) {
+            const matchingAgent = candidates.find(a => a.sessionId.includes(`-${pid}`));
+            if (matchingAgent) {
+              scores.set(matchingAgent.sessionId, (scores.get(matchingAgent.sessionId) || 0) + 3);
+            }
+          }
+        }
+      }
+    }
+  } catch { /* lsof failed, skip this signal */ }
+
+  // 2. CWD proximity: how many path segments does the agent's CWD share with the file? (+2 for closest)
+  let maxDepth = 0;
+  const cwdDepths = new Map<string, number>();
+  for (const a of candidates) {
+    const agentCwd = a.currentPath || a.workingDirectory || '';
+    if (agentCwd && filePath.startsWith(agentCwd)) {
+      const depth = agentCwd.split('/').filter(Boolean).length;
+      cwdDepths.set(a.sessionId, depth);
+      if (depth > maxDepth) maxDepth = depth;
+    }
+  }
+  for (const [sid, depth] of cwdDepths) {
+    if (depth === maxDepth) {
+      scores.set(sid, (scores.get(sid) || 0) + 2);
+    }
+  }
+
+  // 3. Recency: most recently active agent gets +1
+  let mostRecent: AgentState | null = null;
+  let mostRecentTime = 0;
+  for (const a of candidates) {
+    const t = new Date(a.lastActivity).getTime();
+    if (t > mostRecentTime) {
+      mostRecentTime = t;
+      mostRecent = a;
+    }
+  }
+  if (mostRecent) {
+    scores.set(mostRecent.sessionId, (scores.get(mostRecent.sessionId) || 0) + 1);
+  }
+
+  // Pick highest scoring agent
+  let bestAgent = candidates[0];
+  let bestScore = -1;
+  for (const a of candidates) {
+    const s = scores.get(a.sessionId) || 0;
+    if (s > bestScore) {
+      bestScore = s;
+      bestAgent = a;
+    }
+  }
+
+  return bestAgent;
+}
 
 function setupWatcher(dir: string) {
   if (currentWatchPath === dir) return;
@@ -75,6 +157,37 @@ function setupWatcher(dir: string) {
       }
 
       broadcast({ type: 'filesystemChange', payload: { action, path: fullPath } });
+
+      // Observer Mode attribution with heuristic scoring
+      if (observerModeEnabled) {
+        const activeUnbridged = Array.from(agents.values()).filter(a => a.sessionId.startsWith('unbridged-') && a.status === 'running');
+        if (activeUnbridged.length > 0) {
+          const agent = await scoreAndPickAgent(activeUnbridged, fullPath);
+          if (agent) {
+            let toolName: ToolName = 'Edit';
+            if (action === 'create') toolName = 'Write';
+            if (action === 'delete') toolName = 'Delete';
+
+            agent.lastActivity = new Date().toISOString();
+            agent.currentPath = fullPath;
+
+            broadcast({
+              type: 'event',
+              payload: {
+                timestamp: agent.lastActivity,
+                sessionId: agent.sessionId,
+                hookEvent: 'PostToolUse',
+                toolName: toolName,
+                filePath: fullPath,
+                agentType: 'main',
+                provider: agent.provider,
+                message: `[Observer] File ${action} detected`
+              } as AgentEvent
+            });
+            broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+          }
+        }
+      }
     });
     console.log(`👁️  Watching filesystem at ${dir}`);
   } catch (err) {
@@ -131,6 +244,18 @@ async function getRunningProcesses(basePath: string): Promise<ProcessInfo[]> {
       else if (fullCommand.includes('go run')) name = 'Go';
       else if (fullCommand.includes('python')) name = 'Python';
       else if (fullCommand.includes('node')) name = 'Node.js';
+      // Agents
+      else if (fullCommand.includes('aider')) name = 'Aider';
+      else if (fullCommand.includes('goose')) name = 'Goose';
+      else if (fullCommand.includes('cline') || fullCommand.includes('roocode') || fullCommand.includes('roo')) name = 'Cline';
+      else if (fullCommand.includes('gemini')) name = 'Gemini';
+      else if (fullCommand.includes('openhands')) name = 'OpenHands';
+      else if (fullCommand.includes('kilo')) name = 'Kilocode';
+      else if (fullCommand.includes('codex')) name = 'Codex';
+      else if (fullCommand.includes('cursor')) name = 'Cursor';
+      else if (fullCommand.includes('windsurf')) name = 'Windsurf';
+      else if (fullCommand.includes('antigravity')) name = 'Anti-gravity';
+      else if (fullCommand.includes('copilot')) name = 'Copilot';
 
       // Try to extract port from command
       let port: number | undefined;
@@ -158,6 +283,113 @@ async function getRunningProcesses(basePath: string): Promise<ProcessInfo[]> {
       }
     }
 
+    // 2. Observer Mode: Discover native unbridged agents by checking their actual CWD via lsof
+    // ps aux fails here because global commands (like `goose` or `kilo`) don't have the directory in their arguments
+    try {
+      const agentCommands = ['aider', 'goose', 'codex', 'kilo', 'cline', 'roo', 'roocode', 'gemini', 'openhands', 'cursor', 'windsurf', 'antigravity', 'copilot'];
+      const lsofFlags = agentCommands.map(c => `-c ${c}`).join(' ');
+      const { stdout: lsofOut } = await execAsync(`lsof -a -d cwd ${lsofFlags} || true`, { timeout: 2000 });
+
+      const lsofLines = lsofOut.trim().split('\n').filter(Boolean);
+      // Skip header line (COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME)
+      for (let i = 1; i < lsofLines.length; i++) {
+        const line = lsofLines[i];
+        const parts = line.split(/\s+/);
+        if (parts.length >= 9) {
+          const cmd = parts[0].toLowerCase();
+          const pid = parseInt(parts[1], 10);
+          // Path might have spaces, so join everything from index 8
+          const cwd = parts.slice(8).join(' ');
+
+          if (cwd.startsWith(basePath) && !processes.some(p => p.pid === pid)) {
+            let name = 'Agent';
+            if (cmd.includes('aider')) name = 'Aider';
+            else if (cmd.includes('goose')) name = 'Goose';
+            else if (cmd.includes('codex')) name = 'Codex';
+            else if (cmd.includes('kilo')) name = 'Kilocode';
+            else if (cmd.includes('cline') || cmd.includes('roo')) name = 'Cline';
+            else if (cmd.includes('gemini')) name = 'Gemini';
+            else if (cmd.includes('openhands')) name = 'OpenHands';
+            else if (cmd.includes('cursor')) name = 'Cursor';
+            else if (cmd.includes('windsurf')) name = 'Windsurf';
+            else if (cmd.includes('antigravity')) name = 'Anti-gravity';
+            else if (cmd.includes('copilot')) name = 'Copilot';
+
+            processes.push({
+              pid,
+              command: cmd,
+              name,
+              cwd,
+            });
+          }
+        }
+      }
+    } catch (lsofErr) {
+      console.log(`📊 lsof agent detection error:`, lsofErr);
+    }
+
+    // 3. IDE Agent Detection: Anti-gravity, Cursor, Windsurf, etc.
+    // These Electron-based IDEs set CWD to '/', so lsof -d cwd won't find them.
+    // Instead, parse their command lines for workspace paths.
+    try {
+      const idePatterns: { grep: string; name: string; provider: AgentProvider; workspaceRegex: RegExp }[] = [
+        {
+          grep: 'Antigravity',
+          name: 'Anti-gravity',
+          provider: 'antigravity',
+          // language_server --workspace_id file_Users_maxnovich_Development_thegrid
+          workspaceRegex: /--workspace_id\s+file_([\w\/]+)/,
+        },
+        {
+          grep: 'Cursor.app',
+          name: 'Cursor',
+          provider: 'cursor',
+          // --folder-uri file:///Users/x/Dev/project or --workspace_id
+          workspaceRegex: /--folder-uri\s+file:\/\/([\S]+)/,
+        },
+        {
+          grep: 'Windsurf.app',
+          name: 'Windsurf',
+          provider: 'windsurf',
+          workspaceRegex: /--folder-uri\s+file:\/\/([\S]+)/,
+        },
+      ];
+
+      for (const ide of idePatterns) {
+        const { stdout: ideOut } = await execAsync(
+          `ps aux | grep "${ide.grep}" | grep -v grep | head -10 || true`,
+          { timeout: 1000 }
+        );
+        if (!ideOut.trim()) continue;
+
+        for (const line of ideOut.trim().split('\n')) {
+          const match = line.match(ide.workspaceRegex);
+          if (match) {
+            // Convert workspace_id format: file_Users_x_Dev -> /Users/x/Dev
+            let workspace = match[1];
+            if (!workspace.startsWith('/')) {
+              workspace = '/' + workspace.replace(/_/g, '/');
+            }
+
+            if (workspace.startsWith(basePath)) {
+              const parts = line.split(/\s+/);
+              const pid = parseInt(parts[1], 10);
+              if (!isNaN(pid) && !processes.some(p => p.pid === pid)) {
+                processes.push({
+                  pid,
+                  command: ide.name.toLowerCase(),
+                  name: ide.name,
+                  cwd: workspace,
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (ideErr) {
+      console.log(`📊 IDE agent detection error:`, ideErr);
+    }
+
     console.log(`📊 Found ${processes.length} dev processes for ${basePath}:`, processes.map(p => ({ name: p.name, cwd: p.cwd })));
     return processes;
   } catch (err) {
@@ -172,14 +404,75 @@ function startProcessWatcher() {
 
     const processes = await getRunningProcesses(watchedDirectory);
 
+    // Observer Mode: Detect unbridged agents from running processes
+    const currentUnbridged = new Set<string>();
+    let filteredProcesses: ProcessInfo[] = [];
+
+    if (observerModeEnabled) {
+      for (const p of processes) {
+        let provider: AgentProvider | null = null;
+        const cmd = p.command.toLowerCase();
+        if (cmd.includes('aider')) provider = 'aider';
+        else if (cmd.includes('goose')) provider = 'goose';
+        else if (cmd.includes('cline') || cmd.includes('roocode') || cmd.includes('roo-cline') || cmd.includes('roo')) provider = 'cline';
+        else if (cmd.includes('gemini') && !cmd.includes('thegrid')) provider = 'gemini';
+        else if (cmd.includes('openhands')) provider = 'opencode';
+        else if (cmd.includes('kilo')) provider = 'kilocode';
+        else if (cmd.includes('codex')) provider = 'codex';
+        else if (cmd.includes('cursor')) provider = 'cursor';
+        else if (cmd.includes('windsurf')) provider = 'windsurf';
+        else if (cmd.includes('antigravity') || cmd.includes('anti-gravity')) provider = 'antigravity';
+        else if (cmd.includes('copilot')) provider = 'copilot';
+
+        if (provider) {
+          const sessionId = `unbridged-${provider}-${p.pid}`;
+          currentUnbridged.add(sessionId);
+
+          if (!agents.has(sessionId)) {
+            agents.set(sessionId, {
+              sessionId: sessionId,
+              agentType: 'main',
+              currentPath: p.cwd,
+              lastActivity: new Date().toISOString(),
+              color: getAgentColor(provider, 'main'),
+              status: 'running',
+              provider: provider,
+            });
+            broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+            console.log(`🕵️‍♂️  Observer Mode: Detected unbridged agent ${provider} (PID ${p.pid})`);
+          }
+        } else {
+          filteredProcesses.push(p);
+        }
+      }
+    } else {
+      filteredProcesses = processes;
+    }
+
+    // Mark missing unbridged agents as completed, then clean up
+    for (const sessionId of unbridgedAgents) {
+      if (!currentUnbridged.has(sessionId)) {
+        const agent = agents.get(sessionId);
+        if (agent && agent.status === 'running') {
+          agent.status = 'completed';
+          broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+          setTimeout(() => {
+            agents.delete(sessionId);
+            broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+          }, 10000);
+        }
+      }
+    }
+    unbridgedAgents = currentUnbridged;
+
     // Only broadcast if changed
-    const newJson = JSON.stringify(processes);
+    const newJson = JSON.stringify(filteredProcesses);
     const oldJson = JSON.stringify(cachedProcesses);
 
     if (newJson !== oldJson) {
-      cachedProcesses = processes;
-      broadcast({ type: 'processes', payload: processes });
-      console.log(`📊 Processes updated: ${processes.length} found`);
+      cachedProcesses = filteredProcesses;
+      broadcast({ type: 'processes', payload: filteredProcesses });
+      console.log(`📊 Processes updated: ${filteredProcesses.length} found`);
     }
   }, 3000);
 }
@@ -1067,6 +1360,17 @@ wss.on('connection', (ws) => {
         const processes = await getRunningProcesses(message.path);
         cachedProcesses = processes;
         sendToClient(ws, { type: 'processes', payload: processes });
+      } else if (message.type === 'setObserverMode' && message.enabled !== undefined) {
+        observerModeEnabled = message.enabled;
+        console.log(`🕵️‍♂️  Observer Mode set to: ${message.enabled}`);
+        if (!observerModeEnabled) {
+          // Clean up existing unbridged tracking objects
+          for (const id of unbridgedAgents) {
+            agents.delete(id);
+          }
+          unbridgedAgents.clear();
+          broadcast({ type: 'agents', payload: Array.from(agents.values()) });
+        }
       } else if (message.type === 'ping') {
         sendToClient(ws, { type: 'agents', payload: Array.from(agents.values()) });
       }

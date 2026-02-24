@@ -16,7 +16,7 @@ export function useAgentEvents() {
   const filesystemRefreshTimeoutRef = useRef<number | null>(null);
   const currentPathRef = useRef<string>('');
 
-  const { setAgents, setFileSystem, addEvent, setConnected, setProcesses, currentPath, filesystemDirty } = useAgentStore();
+  const { setAgents, setFileSystem, addEvent, setConnected, setProcesses, currentPath, filesystemDirty, observerMode } = useAgentStore();
 
   // Keep ref in sync with state
   currentPathRef.current = currentPath;
@@ -36,6 +36,7 @@ export function useAgentEvents() {
       setConnected(true);
 
       ws.send(JSON.stringify({ type: 'getFilesystem', path: currentPathRef.current }));
+      ws.send(JSON.stringify({ type: 'setObserverMode', enabled: useAgentStore.getState().observerMode }));
     };
 
     ws.onmessage = (event) => {
@@ -144,6 +145,12 @@ export function useAgentEvents() {
       }
     };
   }, [filesystemDirty, currentPath, requestFilesystem]);
+
+  useEffect(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'setObserverMode', enabled: observerMode }));
+    }
+  }, [observerMode]);
 
   return { requestFilesystem };
 }

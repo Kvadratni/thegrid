@@ -56,6 +56,9 @@ export const PROVIDER_COLORS: Record<AgentProvider, string> = {
     qwen: '#FFC107',  // Amber
     aider: '#FF5252',  // Red
     copilot: '#56B6C2',  // Sky Blue
+    cursor: '#C292A1', // Rose
+    windsurf: '#00D1FF', // Bright Blue
+    antigravity: '#B0FFB0', // Light Green
     generic: '#AA00FF',  // Purple
 };
 
@@ -74,6 +77,9 @@ export const PROVIDER_NAMES: Record<AgentProvider, string> = {
     qwen: 'Qwen Code',
     aider: 'Aider',
     copilot: 'GitHub Copilot',
+    cursor: 'Cursor',
+    windsurf: 'Windsurf',
+    antigravity: 'Anti-gravity',
     generic: 'Generic Agent',
 };
 
@@ -93,6 +99,9 @@ export const PROVIDER_COMMANDS: Record<AgentProvider, string> = {
     qwen: 'qwen',
     aider: 'aider',
     copilot: 'github-copilot',
+    cursor: 'cursor',
+    windsurf: 'windsurf',
+    antigravity: 'antigravity',
     generic: '',  // Not spawnable
 };
 

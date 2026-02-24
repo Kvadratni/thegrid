@@ -18,13 +18,22 @@ const TURN_SPEED = 12;
 const PROVIDER_ICONS: Record<AgentProvider, string> = {
   claude: '●', gemini: '◆', codex: '■', goose: '▲',
   kilocode: '◎', opencode: '⬡', kimi: '✦', cline: '◇',
-  augment: '⬢', qwen: '★', aider: '▼', copilot: '◈', generic: '○',
+  augment: '⬢', qwen: '★', aider: '▼', copilot: '◈',
+  cursor: '◖', windsurf: '◗', antigravity: '◐',
+  generic: '○',
 };
 
 function getAgentLabel(agent: AgentState): string {
-  const name = agent.sessionId.startsWith('grid-')
-    ? agent.sessionId.replace('grid-', '').toUpperCase()
-    : agent.sessionId.slice(-6).toUpperCase();
+  let name = '';
+  if (agent.sessionId.startsWith('grid-')) {
+    name = agent.sessionId.replace('grid-', '').toUpperCase();
+  } else if (agent.sessionId.startsWith('unbridged-')) {
+    const parts = agent.sessionId.split('-');
+    name = `PID: ${parts[parts.length - 1]}`;
+  } else {
+    name = agent.sessionId.slice(-6).toUpperCase();
+  }
+
   const icon = PROVIDER_ICONS[agent.provider || 'claude'] || '●';
   return `${icon} ${name}`;
 }

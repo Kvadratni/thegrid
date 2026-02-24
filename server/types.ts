@@ -39,6 +39,9 @@ export type AgentProvider =
   | 'qwen'
   | 'aider'
   | 'copilot'
+  | 'cursor'
+  | 'windsurf'
+  | 'antigravity'
   | 'generic';
 
 export interface ProviderConfig {
@@ -114,6 +117,7 @@ export interface ServerMessage {
 }
 
 export interface ClientMessage {
-  type: 'subscribe' | 'getFilesystem' | 'ping';
+  type: 'subscribe' | 'getFilesystem' | 'ping' | 'setObserverMode';
   path?: string;
+  enabled?: boolean;
 }

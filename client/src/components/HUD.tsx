@@ -166,8 +166,12 @@ function getAgentName(sessionId: string): string {
   if (sessionId.startsWith('grid-')) {
     return sessionId.replace('grid-', '').toUpperCase();
   }
-  const hash = sessionId.slice(-6).toUpperCase();
-  return hash;
+  if (sessionId.startsWith('unbridged-')) {
+    const parts = sessionId.split('-');
+    const pid = parts[parts.length - 1];
+    return `PID: ${pid}`;
+  }
+  return sessionId.slice(-6).toUpperCase();
 }
 
 const PROVIDER_DISPLAY: Record<AgentProvider, { icon: string; label: string }> = {
@@ -183,6 +187,9 @@ const PROVIDER_DISPLAY: Record<AgentProvider, { icon: string; label: string }> =
   qwen: { icon: '★', label: 'Qwen Code' },
   aider: { icon: '▼', label: 'Aider' },
   copilot: { icon: '◈', label: 'Copilot' },
+  cursor: { icon: '◖', label: 'Cursor' },
+  windsurf: { icon: '◗', label: 'Windsurf' },
+  antigravity: { icon: '◐', label: 'Anti-gravity' },
   generic: { icon: '○', label: 'Generic' },
 };
 
@@ -686,6 +693,8 @@ export default function HUD() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [showProviderDropdown, setShowProviderDropdown] = useState(false);
   const currentPath = useAgentStore((state) => state.currentPath);
+  const observerMode = useAgentStore((state) => state.observerMode);
+  const setObserverMode = useAgentStore((state) => state.setObserverMode);
   const agents = useAgentStore((state) => state.agents);
   const connected = useAgentStore((state) => state.connected);
   const selectedAgentId = useAgentStore((state) => state.selectedAgentId);
@@ -1091,6 +1100,65 @@ export default function HUD() {
                   marginTop: '6px',
                 }}>
                   Agent will bypass all permission prompts
+                </div>
+              )}
+            </div>
+
+            <div
+              onClick={() => setObserverMode(!observerMode)}
+              style={{
+                marginBottom: '12px',
+                padding: '10px',
+                background: observerMode ? 'rgba(170, 0, 255, 0.15)' : 'rgba(0, 255, 255, 0.05)',
+                border: `1px solid ${observerMode ? '#AA00FF' : '#00FFFF'}`,
+                borderRadius: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '14px' }}>{observerMode ? '🕵️‍♂️' : '👁️'}</span>
+                  <span style={{
+                    color: observerMode ? '#AA00FF' : '#00FFFF',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    letterSpacing: '1px',
+                  }}>
+                    {observerMode ? 'OBSERVER MODE' : 'IGNORE NATIVES'}
+                  </span>
+                </div>
+                <div style={{
+                  width: '36px',
+                  height: '18px',
+                  background: observerMode ? '#AA00FF' : '#333',
+                  borderRadius: '9px',
+                  position: 'relative',
+                  transition: 'background 0.2s',
+                }}>
+                  <div style={{
+                    width: '14px',
+                    height: '14px',
+                    background: '#FFF',
+                    borderRadius: '50%',
+                    position: 'absolute',
+                    top: '2px',
+                    left: observerMode ? '20px' : '2px',
+                    transition: 'left 0.2s',
+                  }} />
+                </div>
+              </div>
+              {observerMode && (
+                <div style={{
+                  fontSize: '9px',
+                  color: '#AA00FF',
+                  marginTop: '6px',
+                }}>
+                  Grid will visualize external local agents
                 </div>
               )}
             </div>

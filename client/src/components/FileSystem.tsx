@@ -2,7 +2,7 @@ import { useMemo, useState, createContext, useContext, useRef } from 'react';
 import { Text, Billboard } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useAgentStore, FileSystemNode, ProcessInfo } from '../stores/agentStore';
+import { useAgentStore, FileSystemNode, ProcessInfo, FileAnimation } from '../stores/agentStore';
 import { calculateLayout, LayoutNode, getCachedPosition } from '../utils/fileSystemLayout';
 import FileEffect from './effects/FileEffect';
 import FileCrumble from './effects/FileCrumble';
@@ -587,9 +587,10 @@ export default function FileSystem({ node, position }: FileSystemProps) {
         }
       }
 
-      const estimatedInfo = info || { x: 0, z: 0, height: 2 };
-      return { animation: anim, info: estimatedInfo };
-    });
+      if (!info) return null;
+
+      return { animation: anim, info };
+    }).filter(item => item !== null) as { animation: FileAnimation; info: { x: number; z: number; height: number } }[];
   }, [fileAnimations, layout]);
 
   // Group processes by their cwd and find positions

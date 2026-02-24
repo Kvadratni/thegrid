@@ -9,7 +9,9 @@ export type AgentStatus = 'running' | 'completed' | 'error';
 export type AgentProvider =
   | 'claude' | 'gemini' | 'codex' | 'goose'
   | 'kilocode' | 'opencode' | 'kimi' | 'cline'
-  | 'augment' | 'qwen' | 'aider' | 'copilot' | 'generic';
+  | 'augment' | 'qwen' | 'aider' | 'copilot'
+  | 'cursor' | 'windsurf' | 'antigravity'
+  | 'generic';
 
 export interface AgentState {
   sessionId: string;
@@ -99,6 +101,7 @@ interface AgentStore {
   filesystemDirty: number;
   teleportCounter: number;
   dangerousMode: boolean;
+  observerMode: boolean;
   selectedProvider: AgentProvider;
   viewingFile: string | null;
 
@@ -133,6 +136,7 @@ interface AgentStore {
   setHighlightedPath: (path: string | null) => void;
   teleportToOrigin: () => void;
   setDangerousMode: (enabled: boolean) => void;
+  setObserverMode: (enabled: boolean) => void;
   addFileAnimation: (animation: FileAnimation) => void;
   removeFileAnimation: (path: string) => void;
   setProcesses: (processes: ProcessInfo[]) => void;
@@ -180,6 +184,7 @@ export const useAgentStore = create<AgentStore>()(
       filesystemDirty: 0,
       teleportCounter: 0,
       dangerousMode: false,
+      observerMode: true,
       selectedProvider: 'claude',
       viewingFile: null,
 
@@ -200,7 +205,12 @@ export const useAgentStore = create<AgentStore>()(
       setFileSystem: (fs) => set({ fileSystem: fs }),
 
       setCurrentPath: (path) => {
-        set({ currentPath: path, teleportCounter: get().teleportCounter + 1 });
+        set({
+          currentPath: path,
+          teleportCounter: get().teleportCounter + 1,
+          fileEffects: [],
+          fileAnimations: []
+        });
       },
 
       teleportToOrigin: () => {
@@ -350,6 +360,8 @@ export const useAgentStore = create<AgentStore>()(
 
       setDangerousMode: (enabled) => set({ dangerousMode: enabled }),
 
+      setObserverMode: (enabled) => set({ observerMode: enabled }),
+
       addFileAnimation: (animation) => {
         const animations = get().fileAnimations.filter(a => a.path !== animation.path);
         animations.push(animation);
@@ -426,6 +438,7 @@ export const useAgentStore = create<AgentStore>()(
       name: STORAGE_KEY,
       partialize: (state) => ({
         dangerousMode: state.dangerousMode,
+        observerMode: state.observerMode,
         currentPath: state.currentPath,
         selectedProvider: state.selectedProvider,
         allEvents: state.allEvents.slice(-MAX_PERSISTED_EVENTS),

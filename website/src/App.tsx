@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Terminal, Box, GitBranch, Cpu, Github, ExternalLink, Zap, Shield, Layers, Monitor, Keyboard, Palette } from 'lucide-react';
 import './index.css';
@@ -53,6 +53,92 @@ function Navbar() {
   );
 }
 
+function HeroVideo() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onTimeUpdate = () => {
+      setProgress(video.duration ? video.currentTime / video.duration : 0);
+      setCurrentTime(video.currentTime);
+    };
+    const onLoaded = () => setDuration(video.duration);
+
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('loadedmetadata', onLoaded);
+    return () => {
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('loadedmetadata', onLoaded);
+    };
+  }, []);
+
+  const togglePlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      video.play();
+      setIsPlaying(true);
+    } else {
+      video.pause();
+      setIsPlaying(false);
+    }
+  }, []);
+
+  const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const bar = progressBarRef.current;
+    const video = videoRef.current;
+    if (!bar || !video) return;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    video.currentTime = ratio * video.duration;
+  }, []);
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="video-wrapper">
+      <video
+        ref={videoRef}
+        autoPlay
+        loop
+        muted
+        playsInline
+        src={`${import.meta.env.BASE_URL}grid-demo.mp4`}
+        style={{ width: '100%', display: 'block', cursor: 'pointer' }}
+        onClick={togglePlay}
+      />
+      {/* Play/Pause overlay */}
+      {!isPlaying && (
+        <div className="video-play-overlay" onClick={togglePlay}>
+          <div className="video-play-btn">▶</div>
+        </div>
+      )}
+      {/* Custom controls bar */}
+      <div className="video-controls">
+        <button className="video-ctrl-btn mono" onClick={togglePlay}>
+          {isPlaying ? '⏸' : '▶'}
+        </button>
+        <span className="video-time mono">{formatTime(currentTime)}</span>
+        <div className="video-progress" ref={progressBarRef} onClick={handleSeek}>
+          <div className="video-progress-fill" style={{ width: `${progress * 100}%` }} />
+        </div>
+        <span className="video-time mono">{formatTime(duration)}</span>
+      </div>
+    </div>
+  );
+}
+
 function LandingPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
@@ -72,17 +158,7 @@ function LandingPage() {
           </a>
         </div>
 
-        <div className="video-wrapper">
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            src={`${import.meta.env.BASE_URL}grid-demo.mp4`}
-            style={{ width: '100%', display: 'block' }}
-          />
-          <div className="video-overlay"></div>
-        </div>
+        <HeroVideo />
       </section>
 
       {/* Stats Bar */}
@@ -416,16 +492,129 @@ npm install -g kilo-acp`}</code></pre>
   );
 }
 
-function App() {
+function AudioPlayer() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.3);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Set initial volume
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = 0.3;
+  }, []);
+
+  // Listen for the splash screen dismissal to start playback
+  useEffect(() => {
+    const handler = () => {
+      const audio = audioRef.current;
+      if (audio && audio.paused) {
+        audio.play().then(() => setIsPlaying(true)).catch(() => { });
+      }
+    };
+    window.addEventListener('splash-dismissed', handler, { once: true });
+    return () => window.removeEventListener('splash-dismissed', handler);
+  }, []);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play().then(() => setIsPlaying(true));
+    } else {
+      audio.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value);
+    setVolume(v);
+    if (audioRef.current) audioRef.current.volume = v;
+  };
+
   return (
-    <Router>
-      <Navbar />
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/docs" element={<DocsPage />} />
-        <Route path="/providers" element={<ProvidersPage />} />
-      </Routes>
-    </Router>
+    <>
+      <audio ref={audioRef} src={`${import.meta.env.BASE_URL}grid-theme.mp3`} loop preload="auto" />
+      <div className="audio-player" style={{ opacity: collapsed ? 0.6 : 1 }}>
+        <button
+          className="suno-toggle"
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? 'Expand player' : 'Collapse player'}
+        >
+          {collapsed ? '♫' : '✕'}
+        </button>
+        {!collapsed && (
+          <div className="audio-panel glass-panel">
+            <div className="audio-title mono">♫ Chromed Ghosts</div>
+            <div className="audio-controls">
+              <button className="audio-play-btn mono" onClick={togglePlay}>
+                {isPlaying ? '⏸' : '▶'}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={volume}
+                onChange={handleVolume}
+                className="audio-volume"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function SplashScreen({ onDismiss }: { onDismiss: () => void }) {
+  const [isFading, setIsFading] = useState(false);
+
+  const handleClick = () => {
+    if (isFading) return;
+    setIsFading(true);
+    // Dispatch event so audio player knows user gesture happened
+    window.dispatchEvent(new Event('splash-dismissed'));
+
+    // Wait for fade animation to finish before unmounting
+    setTimeout(() => {
+      onDismiss();
+    }, 1000);
+  };
+
+  return (
+    <div className={`splash-screen ${isFading ? 'fade-out' : ''}`} onClick={handleClick}>
+      <div className="splash-content">
+        <div className="splash-logo mono text-gradient">THE GRID</div>
+        <h1 className="splash-title">Are you ready to experience the grid?</h1>
+        <p className="splash-subtitle mono">[ CLICK ANYWHERE TO INITIALIZE ]</p>
+      </div>
+      <div className="splash-grid-bg"></div>
+    </div>
+  );
+}
+
+function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
+  return (
+    <>
+      {showSplash && <SplashScreen onDismiss={() => setShowSplash(false)} />}
+
+      <div className={`app-wrapper ${!showSplash ? 'visible' : ''}`}>
+        <Router>
+          <Navbar />
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/docs" element={<DocsPage />} />
+            <Route path="/providers" element={<ProvidersPage />} />
+          </Routes>
+          <AudioPlayer />
+        </Router>
+      </div>
+    </>
   );
 }
 
