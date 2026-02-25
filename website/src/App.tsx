@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Terminal, Box, GitBranch, Cpu, Github, ExternalLink, Zap, Shield, Layers, Monitor, Keyboard, Palette } from 'lucide-react';
+import { Terminal, Box, GitBranch, Cpu, Github, ExternalLink, Zap, Shield, Layers, Monitor, Keyboard, Palette, Eye } from 'lucide-react';
 import './index.css';
 
 // ─── Content ──────────────────────────────────────────────────────────────────
@@ -215,6 +215,15 @@ function LandingPage() {
             <p>Floating indicators dynamically appear above directories to show active services (Node.js, Python, Vite, etc.) in real-time — see what's running on your grid.</p>
             <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)' }}>
               <img src={`${import.meta.env.BASE_URL}img/running-process.png`} alt="Running Process Indicator" className="clickable-image" onClick={() => setSelectedImage(`${import.meta.env.BASE_URL}img/running-process.png`)} style={{ width: '100%', display: 'block' }} />
+            </div>
+          </div>
+
+          <div className="glass-panel feature-card">
+            <div className="feature-icon"><Eye size={24} /></div>
+            <h3 className="mono">Observer Mode</h3>
+            <p>Automatically detects native unbridged agents and AI IDEs (Cursor, Windsurf, Anti-gravity) via OS-level process sniffing. Maps their file edits to distinct Light Cycles dynamically.</p>
+            <div style={{ marginTop: 'auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--neon-cyan-dim)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem', background: 'rgba(0,0,0,0.5)' }}>
+              <span className="mono" style={{ color: 'var(--neon-magenta)', fontSize: '0.9rem' }}>OBSERVER MODE [ ON ]</span>
             </div>
           </div>
 

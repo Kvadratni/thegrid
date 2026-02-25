@@ -1,6 +1,6 @@
 # The Grid - Agent Orchestration Visualizer
 
-A 3D Tron-inspired visualization of AI agent activity. Watch agents from **Claude Code, Gemini CLI, Codex, Goose, Kilocode, OpenCode, Aider**, and more navigate your codebase as light cycles on neon highways, with real-time visual effects for every action.
+A 3D Tron-inspired visualization of AI agent activity. Watch agents from **Claude Code, Gemini CLI, Codex, Goose, Kilocode, OpenCode, Aider**, and AI IDEs like **Cursor, Windsurf, Anti-gravity, and Copilot** navigate your codebase as light cycles on neon highways, with real-time visual effects for every action.
 
 ## Features
 
@@ -30,6 +30,7 @@ A 3D Tron-inspired visualization of AI agent activity. Watch agents from **Claud
   - Recent commit log
 - **Multi-Repo Detection** - Auto-discovers all Git repositories under the workspace
 - **Event Logging** - Full activity log with persistence across refreshes
+- **Observer Mode** - Automatically detects *unbridged* native agents running on your machine (Cursor, Windsurf, Anti-gravity, Copilot, Aider, Goose, etc.), assigns them a physical form on The Grid, and uses heuristic scoring and OS-level file events to physically attribute their actions without requiring any hooks or adapters.
 - **Dangerous Mode** - Toggle to allow agents to bypass permission prompts
 
 ## ACP Protocol Support
